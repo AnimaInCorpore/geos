@@ -1,0 +1,3 @@
+[submodule "third_party/A8E"]
+	path = third_party/A8E
+	url = https://github.com/AnimaInCorpore/A8E
