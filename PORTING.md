@@ -78,9 +78,14 @@ $FFFA–$FFFF  CPU vectors: NMI, RESET, IRQ (must live in RAM once OS disabled)
 
 **Input driver address note:** The C64 places the input driver at `$FE80` (MOUSE_BASE
 in `inc/geossym.inc`). The C128 uses `$FD00` (MOUSE_BASE_128). For GEOS-XL, `$FD00`
-is adopted (matching the C128 address). Update `MOUSE_BASE`, `MOUSE_JMP`, and
-`END_MOUSE` in `inc/geossym.inc`; update the loader code that copies the driver into
-position; and create `input/inputdrv_atarixl.cfg` with `start = $FD00`.
+is the **final ROM-off runtime address** (matching the C128 address). Update
+`MOUSE_BASE`, `MOUSE_JMP`, and `END_MOUSE` in `inc/geossym.inc`; update the loader
+copy path; and create `input/inputdrv_atarixl.cfg` with `start = $FD00`.
+
+During OS-assisted Phases 2–4, keep the input driver in low RAM (for example
+`$0400–$04FF` or `$7000–$7FFF`), because OS ROM is still mapped at `$D800–$FFFF`
+and writes to `$FD00` are ignored. Move/copy it to `$FD00` only in Phase 5 after
+OS ROM is disabled.
 
 **Key constraint:** The Atari OS ROM occupies $C000–$FFFF and must be **disabled** by
 writing to PORTB ($D301) before GEOS code in that range can execute. BASIC ROM
@@ -139,12 +144,21 @@ an INIT is present), waits for it to RTS, then JMPs to the RUN address.
 
 The cartridge ROM remains visible at $A000–$BFFF throughout execution (standard Atari
 cartridges cannot be disabled from software). The GEOS KERNAL is therefore loaded into
-the space freed by disabling the Atari OS ROM ($C000–$CFFF and $D800–$FFFF), keeping
+the RAM space exposed after disabling the Atari OS ROM, keeping
 the same base address as the C64 ($C000).
 
 1. Cartridge INIT executes from ROM. BASIC is already disabled by the Atari OS when it
    detects a cartridge (cartridge takes precedence at $A000–$BFFF).
-2. Copy the OS-ROM-disable stub to page 2 RAM ($0200), then call it:
+2. While OS ROM is still active, blank the screen and load floppy payloads via OS `SIOV`.
+   Stage anything destined for `$C000+`/`$FD00` into temporary low RAM:
+   - Disk driver (~3.5 KB) → $9000–$9D7F
+   - Lokernal (~640 bytes) → $9D80–$9FFF
+   - Icon/sprite data (~192 bytes) → $3F40–$3FFF
+   - KERNAL header + main code (final size per link map; must fit split ROM-off
+     regions from §5) → temporary buffer in low RAM (e.g. `$4000–$7D7F`, with
+     screen blanked)
+   - Input driver (~384 bytes) → temporary low-RAM buffer (e.g. `$7E00–$7F7F`)
+3. Copy the OS-ROM-disable stub to page 2 RAM ($0200), then call it:
    ```asm
    ; Stub (8 bytes, copied to $0200 before calling):
    disable_os_stub:
@@ -154,17 +168,10 @@ the same base address as the C64 ($C000).
        rts
    ; ... copy stub bytes to $0200 using LDA/STA, then: jsr $0200
    ```
-3. Install GEOS NMI/IRQ/RESET vectors into RAM at $FFFA–$FFFF (now accessible as RAM).
-4. Set up ANTIC display list and blank screen.
-5. Load GEOS artifacts from floppy via SIO:
-   - Disk driver (~3.5 KB) → $9000–$9D7F
-   - Lokernal (~640 bytes) → $9D80–$9FFF
-   - Icon/sprite data (~192 bytes) → $BF40–$BFFF area (note: cartridge ROM is here;
-     place icon data in a different RAM location, e.g. just below the bitmap at $3F00)
-   - KERNAL header + main code (~15.5 KB total) → $C000–$CFFF then $D800 onward
-     (the FP ROM area $D800–$DFFF may also need to be freed if total code exceeds 12 KB;
-     verify against final link map)
-   - Input driver (~384 bytes) → $FD00–$FE7F
+4. Copy staged payloads to their final ROM-off addresses:
+   - KERNAL header + main code from temp buffer → $C000+ (split around hardware I/O; see §5)
+   - Input driver from temp buffer → $FD00–$FE7F
+5. Install GEOS NMI/IRQ/RESET vectors into RAM at $FFFA–$FFFF (now accessible as RAM).
 6. Jump to GEOS KERNAL entry at $C000 (cartridge RUN vector).
 
 **Payload sizes for floppy load (approximate):**
@@ -174,9 +181,9 @@ the same base address as the C64 ($C000).
 | Disk driver | $9000–$9D7F | ~3.5 KB | $9000–$9D7F (unchanged) |
 | Lokernal | $9D80–$9FFF | 640 bytes | $9D80–$9FFF (unchanged) |
 | Icon/mouseptr data | $BF40–$BFFF | 192 bytes | $3F40–$3FFF (relocated; $BF40 is in cart ROM) |
-| KERNAL header | $C000–$C0FF | 256 bytes | $C000–$C0FF |
-| KERNAL main | $C100–$FF?? | ~15 KB | $C100 onward (use $C000–$CFFF + $D800–$EFFF) |
-| Input driver | $FE80–$FFFA | ~384 bytes | $FD00–$FE7F |
+| KERNAL header | $C000–$C0FF | 256 bytes | Stage in low RAM, then copy to $C000–$C0FF after OS-off |
+| KERNAL main | $C100–$FF?? | Link-map dependent | Stage in low RAM, then copy to $C100–$CFFF + $E000–$FCFF |
+| Input driver | $FE80–$FFFA | ~384 bytes | Stage in low RAM, then copy to $FD00–$FE7F after OS-off |
 
 ### Alternative: 16 KB bankswitched cartridge ($8000–$BFFF)
 
@@ -401,9 +408,10 @@ MEMORY {
     ; Icon/mouse pointer data — relocated away from $BF40 (cartridge ROM area)
     ICONS:        start = $3F40, size = $00C0, fill = yes, file = %O;
 
-    ; KERNAL: same base address as C64; sits in former Atari OS ROM area
+    ; KERNAL: split to avoid Atari hardware I/O ($D000–$D7FF)
     KERNALHDR:    start = $C000, size = $0100, fill = yes, file = %O;
-    KERNAL:       start = $C100, size = $3D80, fill = no,  file = %O;
+    KERNAL_LO:    start = $C100, size = $0F00, fill = yes, file = %O;
+    KERNAL_HI:    start = $E000, size = $1D00, fill = yes, file = %O;
 
     ; VARS BSS — shifted to avoid Atari OS zero page
     VARS:         start = $86C0, size = $0940;
@@ -434,16 +442,18 @@ SEGMENTS {
     files2:             load = KERNALHDR, type = ro;
 
     ; kernal code (all other segments from kernal_bsw.cfg remain)
-    jumptab:            load = KERNAL,    type = ro;
-    hw_atari:           load = KERNAL,    type = ro;   ; replaces hw1a/hw1b
-    irq_atari:          load = KERNAL,    type = ro;   ; replaces irq
-    keyboard_atari:     load = KERNAL,    type = ro;   ; replaces keyboard1/2/3
-    ; ... all other segments unchanged from kernal_bsw.cfg ...
+    ; Place segments in KERNAL_LO first, then continue in KERNAL_HI.
+    ; Never map executable/data segments into $D000–$D7FF.
+    jumptab:            load = KERNAL_LO, type = ro;
+    hw_atari:           load = KERNAL_LO, type = ro;   ; replaces hw1a/hw1b
+    irq_atari:          load = KERNAL_LO, type = ro;   ; replaces irq
+    keyboard_atari:     load = KERNAL_HI, type = ro;   ; replaces keyboard1/2/3
+    ; ... all other segments assigned to KERNAL_LO or KERNAL_HI ...
 }
 ```
 
 Verify the final layout with `ld65 --map` and confirm no segment overflows or
-overlaps with the I/O area ($D000–$D7FF) or other reserved ranges.
+generated output in the I/O area ($D000–$D7FF) or other reserved ranges.
 
 ---
 
@@ -636,6 +646,16 @@ Three registers are relevant:
 | `SKSTAT` | $D20F | Bit 2 = 0 while a key is physically held down (key-down qualifier). |
 | `CH`     | $02FC | OS shadow of keyboard input (ATASCII). Holds $FF when no key event is pending. Valid only while OS is active; replicate with a GEOS-owned variable once OS ROM is disabled. |
 
+Cold-boot initialization requirement: reset and re-enable POKEY keyboard scanning
+in `start_atari.s` before first `KBCODE` use:
+
+```asm
+    lda #$00
+    sta SKCTL_W         ; reset keyboard/serial state machine
+    lda #$03
+    sta SKCTL_W         ; enable keyboard scan + debounce
+```
+
 Recommended keyboard-scan loop:
 
 ```asm
@@ -742,32 +762,26 @@ The decode logic from `input/amigamse.s` is reusable, but sampling only once per
 too slow and drops quadrature transitions during fast movement.
 
 Required architecture:
-1. Poll quadrature in a POKEY Timer 1 IRQ at ~240–400 Hz (320 Hz is a practical default).
-2. In that IRQ, decode gray-code transitions and accumulate signed deltas into
+1. Use ANTIC DLIs for high-rate sampling (set DLI bits on several mode `$0F` lines).
+   With PAL 50 Hz, 6–10 DLIs/frame yields ~300–500 Hz effective poll rate.
+2. In the DLI NMI path, decode gray-code transitions and accumulate signed deltas into
    `mouseXDelta` / `mouseYDelta`.
 3. In the frame VBI (50 Hz for v1), consume those accumulators, update GEOS pointer coordinates,
    clamp to bounds, and clear the accumulators.
+4. Do not program POKEY Timer 1 (`AUDF1`/`IRQEN` bit 0) for mouse polling; Timer 1/2 are
+   used by Atari OS SIO timing and must remain untouched for reliable floppy I/O.
 
 ```asm
-; irqEnableMask = software shadow of IRQEN_W (store in vars_atari.s)
-InitMouseTimer:
-    lda #$00
-    sta AUDCTL_W        ; default 64 kHz timer clock
-    lda #200            ; 64 kHz / 200 = ~320 Hz
-    sta AUDF1_W
-    lda #$00
-    sta AUDC1_W         ; keep channel silent
-    lda irqEnableMask
-    ora #$01            ; Timer 1 IRQ enable bit
-    sta irqEnableMask
-    sta IRQEN_W
+; Example display-list entry with DLI enabled (mode $0F + DLI bit):
+    .byte $8F, <scanline_addr, >scanline_addr
+
+InitMouseDLI:
+    lda #$60            ; NMIEN: bit6=VBI + bit5=DLI
+    sta NMIEN
     rts
 
-; In geos_irq (ROM-off mode): service Timer 1 first
-    lda IRQST_R
-    and #$01            ; bit0 active low: 0 = Timer 1 fired
-    bne @not_timer1
-
+; In geos_nmi: DLI path does high-rate quadrature sampling
+ServiceMouseDLI:
     lda PORTA           ; joystick port 1 is high nibble
     lsr
     lsr
@@ -775,10 +789,7 @@ InitMouseTimer:
     lsr                 ; bits 0–3 now hold quadrature state
     ; ... gray-code decode vs previous state ...
     ; ... inc/dec mouseXDelta and mouseYDelta ...
-
-    lda irqEnableMask
-    sta IRQEN_W         ; re-arm without clobbering other enabled sources
-@not_timer1:
+    rts
 ```
 
 VBI-side cursor update:
@@ -1199,7 +1210,7 @@ Phase 5 disk rule:
 26. Tune timing loops (Atari 1.79 MHz vs C64 1 MHz; cycle-count-dependent delays differ)
 
 Step 24 implementation requirement:
-- Poll ST mouse quadrature in a POKEY Timer 1 IRQ (~240–400 Hz), then apply accumulated deltas in the PAL frame VBI (50 Hz).
+- Poll ST mouse quadrature using ANTIC DLIs (~300–500 Hz by placing DLI on selected scanlines), then apply accumulated deltas in the PAL frame VBI (50 Hz).
 
 Step 26 timing requirement:
 - Calibrate delays with ANTIC/P-M DMA enabled; effective CPU time is lower during active display than during VBI.
@@ -1254,8 +1265,8 @@ macros (§6.3) with a nesting counter. A non-counted implementation will re-enab
 NMI too early in nested critical sections and cause timing-sensitive corruption.
 
 **Mouse sampling rate.** Quadrature must be sampled above frame rate. Polling only
-once per VBI will miss transitions during fast movement; use a POKEY Timer 1 IRQ in the
-~240–400 Hz range and apply accumulated deltas in VBI.
+once per VBI will miss transitions during fast movement; use ANTIC DLI-based sampling
+in the ~300–500 Hz range and apply accumulated deltas in VBI.
 
 **Disk I/O baseline in ROM-off mode.** Avoid blocking the port on a full raw-SIO
 rewrite. Use the ROM-banked `SIOV` bridge first (running from RAM below `$C000`),
