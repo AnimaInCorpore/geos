@@ -39,7 +39,10 @@ COLPF3   = $D019
 COLBK    = $D01A ; Background color
 PRIOR    = $D01B ; Priority control
 VDELAY   = $D01C ; Vertical delay
-GRACTL   = $D01D ; Graphics control: bit0=missile DMA, bit1=player DMA
+GRACTL   = $D01D ; Graphics control:
+                  ; bit0=enable missile graphics display latching (GRAFM writes)
+                  ; bit1=enable player graphics display latching (GRAFPx writes)
+                  ; bit2=latch paddle/trigger inputs
 HITCLR   = $D01E ; Write: clear collision registers
 CONSOL   = $D01F ; Console keys (Start/Select/Option, read active-low)
 
@@ -119,8 +122,8 @@ VCOUNT   = $D40B ; Vertical line counter (read)
 PENH     = $D40C ; Light pen horizontal position (read)
 PENV     = $D40D ; Light pen vertical position (read)
 NMIEN    = $D40E ; NMI enable: bit6=VBI, bit5=DLI
-NMIST    = $D40F ; NMI status (read)
-NMIRES   = $D40F ; NMI acknowledge/reset (write)
+NMIST    = $D40F ; NMI status (read): bit7=DLI pending, bit6=VBI pending
+NMIRES   = $D40F ; NMI acknowledge/reset (write; use for VBI acknowledge)
 
 ; -----------------------------------------------
 ; Atari OS variables (valid when OS ROM active)

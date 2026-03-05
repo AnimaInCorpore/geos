@@ -135,9 +135,11 @@ An Atari 800 XL right-slot cartridge occupies $A000–$BFFF (8 KB). The cartridg
 header lives at the top of the ROM:
 
 - `$BFFA–$BFFB`: **RUN address** — jumped to (JMP) by the OS once initialisation is complete
-- `$BFFE–$BFFF`: **INIT address + flags** — JSR'd by the OS during startup (before RUN)
+- `$BFFC`: **Flags byte** — bit 0 = cartridge present, bit 2 = boot without disk, bit 7 = diagnostic cart
+- `$BFFD`: **Reserved/unused** — set to `$00`
+- `$BFFE–$BFFF`: **INIT address** — JSR'd by the OS during startup (before RUN), if enabled by `$BFFC`
 
-Call order: the OS first JSRs to the INIT address (if the flag byte at $BFFE indicates
+Call order: the OS first JSRs to the INIT address (if the flag byte at $BFFC indicates
 an INIT is present), waits for it to RTS, then JMPs to the RUN address.
 
 ### Bootstrap cartridge boot flow (8 KB ROM)
@@ -149,15 +151,16 @@ the same base address as the C64 ($C000).
 
 1. Cartridge INIT executes from ROM. BASIC is already disabled by the Atari OS when it
    detects a cartridge (cartridge takes precedence at $A000–$BFFF).
-2. While OS ROM is still active, blank the screen and load floppy payloads via OS `SIOV`.
-   Stage anything destined for `$C000+`/`$FD00` into temporary low RAM:
-   - Disk driver (~3.5 KB) → $9000–$9D7F
-   - Lokernal (~640 bytes) → $9D80–$9FFF
-   - Icon/sprite data (~192 bytes) → $3F40–$3FFF
+2. While OS ROM is still active, disable ANTIC DMA and load floppy payloads via OS
+   `SIOV` in this order (stage anything destined for `$C000+`/`$FD00` into low RAM):
+   - `lda #$00` / `sta DMACTL` to blank the display and stop all ANTIC DMA fetches.
+   - Disk driver (~3.5 KB) → $9000–$9D7F (final location)
+   - Lokernal (~640 bytes) → $9D80–$9FFF (final location)
    - KERNAL header + main code (final size per link map; must fit split ROM-off
-     regions from §5) → temporary buffer in low RAM (e.g. `$4000–$7D7F`, with
-     screen blanked)
+     regions from §5) → temporary low-RAM buffer (e.g. `$4000–$7D7F`)
    - Input driver (~384 bytes) → temporary low-RAM buffer (e.g. `$7E00–$7F7F`)
+   - Icon/sprite data (~192 bytes) → $3F40–$3FFF (final location, loaded after the
+     temporary KERNAL/input buffers are staged)
 3. Copy the OS-ROM-disable stub to page 2 RAM ($0200), then call it:
    ```asm
    ; Stub (8 bytes, copied to $0200 before calling):
@@ -239,7 +242,10 @@ COLPF3  = $D019
 COLBK   = $D01A   ; Background color
 PRIOR   = $D01B   ; Priority control
 VDELAY  = $D01C   ; Vertical delay
-GRACTL  = $D01D   ; Graphics control: bit0=missile DMA, bit1=player DMA
+GRACTL  = $D01D   ; Graphics control:
+                  ;   bit 0: enable missile graphics display latching (GRAFM writes)
+                  ;   bit 1: enable player graphics display latching (GRAFPx writes)
+                  ;   bit 2: latch paddle/trigger inputs
 HITCLR  = $D01E   ; Write: clear collision registers
 CONSOL  = $D01F   ; Console keys (Start/Select/Option, read active-low)
 
@@ -320,8 +326,8 @@ VCOUNT  = $D40B   ; Vertical line counter (read)
 PENH    = $D40C   ; Light pen horizontal position (read)
 PENV    = $D40D   ; Light pen vertical position (read)
 NMIEN   = $D40E   ; NMI enable: bit6=VBI, bit5=DLI
-NMIST   = $D40F   ; NMI status (read)
-NMIRES  = $D40F   ; NMI acknowledge/reset (write)
+NMIST   = $D40F   ; NMI status (read): bit7=DLI pending, bit6=VBI pending
+NMIRES  = $D40F   ; NMI acknowledge/reset (write; use for VBI acknowledge)
 
 ; -----------------------------------------------
 ; NMI control macros (usable in both OS-assisted and ROM-off modes)
@@ -513,8 +519,8 @@ atari_dlist:
 ```
 
 PAL baseline note: keep display list geometry as defined above for v1 PAL release.
-If NTSC compatibility is added later, adjust only border blank-line counts, not
-bitmap height.
+For NTSC follow-up, keep bitmap height at 200 but also revalidate border centering,
+VBI-rate-dependent timing, and palette tuning (see §10).
 
 Initialization:
 ```asm
@@ -587,24 +593,60 @@ RAM). The IRQ vector at $FFFE handles BRK and any POKEY IRQ use.
 
 ; Enable VBI NMI
     lda #$40
+    sta nmiEnableMask   ; baseline mask: VBI only (set to #$60 when DLI enabled)
     sta NMIEN
 
 geos_nmi:
-    sta NMIRES          ; acknowledge NMI to allow next VBI
+    pha
+    lda NMIST
+    and #$80            ; DLI pending?
+    bne @is_dli
+    lda NMIST
+    and #$40            ; VBI pending?
+    beq @done           ; spurious/unknown NMI source
+
+@is_vbi:
+    sta NMIRES          ; acknowledge VBI only
+    txa
+    pha
+    tya
+    pha
     ; ... save r0–r15 and other state (same structure as C64 irq.s) ...
     jsr _DoKeyboardScan
     jsr UpdateMouse
     ; ... decrement timers, schedule processes ...
     ; ... restore state ...
+    pla
+    tay
+    pla
+    tax
+@done:
+    pla
+    rti
+
+@is_dli:
+    txa
+    pha
+    tya
+    pha
+    jsr ServiceMouseDLI ; high-rate quadrature sample
+    pla
+    tay
+    pla
+    tax
+    pla
     rti
 ```
 
 **Replacing `sei`/`cli` critical sections:** Unlike most NMI sources, the Atari VBI
 NMI can be suppressed in software by writing to ANTIC's `NMIEN` register ($D40E).
 This provides a clean replacement for the C64's `sei`/`cli` pattern, but GEOS has
-nested critical sections, so the macros must be reference-counted. Add a zero-page
-or low-RAM variable (for example `nmiDisableDepth` in `kernal/vars/vars_atari.s`,
-initialized to 0), then add to `inc/geosmac.inc`:
+nested critical sections, so the macros must be reference-counted. Add low-RAM
+variables (for example in `kernal/vars/vars_atari.s`):
+- `nmiDisableDepth` (initialized to `0`)
+- `nmiEnableMask` (initialized to `#$40`; set to `#$60` when DLI sampling is enabled)
+
+Then add to `inc/geosmac.inc`:
 
 ```asm
 .macro DISABLE_NMI
@@ -622,8 +664,8 @@ initialized to 0), then add to `inc/geosmac.inc`:
     beq :+          ; tolerate unbalanced enable during bring-up
     dec nmiDisableDepth
     bne :+
-    lda #$40
-    sta NMIEN       ; re-enable only after the last nested section exits
+    lda nmiEnableMask
+    sta NMIEN       ; restore configured NMI sources on outermost exit
 :
 .endmacro
 ```
@@ -631,6 +673,10 @@ initialized to 0), then add to `inc/geosmac.inc`:
 Replace every `sei` (that guards against the timing tick) with `DISABLE_NMI`, and
 every corresponding `cli` with `ENABLE_NMI`. This preserves C64 critical-section
 semantics without prematurely re-enabling NMI in nested call paths.
+
+NMI dispatch rule: DLI and VBI share the same CPU NMI vector at `$FFFA`. Always branch
+by `NMIST` inside `geos_nmi`; do not run full VBI work on DLI entries. Also do not
+write `NMIRES` in the DLI path; DLI status auto-clears on interrupt service completion.
 
 ### 6.4 Rewrite: Keyboard Scanner
 
@@ -776,7 +822,8 @@ Required architecture:
     .byte $8F, <scanline_addr, >scanline_addr
 
 InitMouseDLI:
-    lda #$60            ; NMIEN: bit6=VBI + bit5=DLI
+    lda #$60            ; NMIEN mask: bit6=VBI + bit5=DLI
+    sta nmiEnableMask
     sta NMIEN
     rts
 
@@ -791,6 +838,10 @@ ServiceMouseDLI:
     ; ... inc/dec mouseXDelta and mouseYDelta ...
     rts
 ```
+
+Because DLI and VBI share a single NMI vector, `ServiceMouseDLI` must be reached via
+`geos_nmi` dispatch (see §6.3 Mode B). Keep DLI service short and avoid `NMIRES` writes
+there; only the VBI path acknowledges through `NMIRES`.
 
 VBI-side cursor update:
 
@@ -913,6 +964,28 @@ _ReadBlock:
     sta DAUX2
     jsr SIOV        ; call OS SIO (valid 6502: jsr with absolute address)
     ; on return: Y=1 and N=0 = success; Y=negative = error; DSTATS = status
+    rts
+```
+
+Minimal error-handling skeleton (recommended starting point):
+
+```asm
+_ReadBlock:
+    ; ... fill DCB fields ...
+    jsr SIOV
+    tya
+    bmi @sio_error      ; Y < 0 => error
+    lda #$00
+    rts                 ; success (A=0)
+
+@sio_error:
+    lda DSTATS          ; OS SIO status/error code
+    ; common values:
+    ;   $8A = device NAK
+    ;   $8B = serial framing error
+    ;   $8C = checksum error
+    ;   $90 = device timeout
+    ; map to GEOS disk error codes here if desired
     rts
 ```
 
@@ -1066,8 +1139,9 @@ GetPixelByteAddress:
 This LUT keeps inner loops fast on 6502 and removes runtime branching around ANTIC's
 4 KB boundary.
 
-**Mouse cursor (P/M graphics):** The C64 uses VIC-II hardware sprites. Replace with
-GTIA Player 0 (an 8-pixel-wide vertical strip, full screen height):
+**Mouse cursor (P/M graphics):** The C64 GEOS cursor is 16×16 pixels. A single GTIA
+player is only 8 pixels wide in normal mode, so baseline GEOS-XL should use **two
+players** (P0 + P1) as adjacent halves of one cursor sprite:
 
 ```asm
 ; P/M memory area: 2 KB aligned, place at $7800 (example)
@@ -1078,21 +1152,30 @@ GTIA Player 0 (an 8-pixel-wide vertical strip, full screen height):
 ; Enable P/M DMA and player/missile output
     lda #$3E        ; DMACTL: playfield + P/M single-line DMA
     sta DMACTL
-    lda #$03        ; GRACTL: enable player+missile DMA output
+    lda #$03        ; GRACTL: enable player+missile graphics output latching
     sta GRACTL
 
-; Set Player 0 color (white cursor on black background)
+; Keep both players single-width (8 px each)
+    lda #$00
+    sta SIZEP0
+    sta SIZEP1
+
+; Use the same color for both halves
     lda #$0F
     sta COLPM0
+    sta COLPM1
 
-; Set Player 0 horizontal position
-    lda mouseXPos           ; 0–319 pixel coordinate
-    ; ... convert to HPOSP0 value (0–255 covers the display width) ...
+; Horizontal placement: P1 = P0 + 8 pixels
+    lda mouseXPosAtari      ; already converted to GTIA HPOS scale
     sta HPOSP0
+    clc
+    adc #8
+    sta HPOSP1
 
-; Write cursor shape into Player 0 data at Y position:
-    ; P0 data starts at PMBASE+$0400 (single-line mode)
-    ; Zero the old cursor row, write new shape at mouseYPos offset
+; Write cursor shape rows at Y position:
+    ; P0 data at PMBASE+$0400 (left 8 bits of each cursor row)
+    ; P1 data at PMBASE+$0500 (right 8 bits of each cursor row)
+    ; Zero old rows, then write 16 rows at mouseYPos offset
 ```
 
 `kernal/sprites/` can be adapted or replaced entirely with P/M routines. The cursor
@@ -1253,7 +1336,7 @@ with ROM-off code.
 
 **PAL-first timing policy.** First-release build targets PAL only (`VBI_HZ = 50`).
 Implement timing with `VBI_HZ`-based constants so NTSC (`VBI_HZ = 60`) can be added
-later without rewriting core logic.
+later without rewriting core logic (scope checklist in §10).
 
 **ANTIC DMA cycle stealing.** Effective CPU throughput is lower during active display
 than during VBI, especially with mode `$0F` plus P/M DMA enabled. Validate any
@@ -1291,3 +1374,20 @@ under `atarixl` to avoid corrupting application data.
 and OS ROM disable is bit 0 = 0 (RAM). The polarities differ from what intuition
 might suggest; refer to the mask table in §2 and test on real hardware or Altirra
 with accurate XL hardware emulation enabled.
+
+---
+
+## 10. NTSC Follow-Up Scope
+
+NTSC support should start only after the PAL baseline (Phases 1–5) is stable.
+Keep the same 320×200 bitmap model, then validate these deltas:
+
+1. Set timing configuration to NTSC (`VIDEO_STD = 1`, `VBI_HZ = 60`).
+2. Re-test display-list centering/borders on NTSC hardware or emulator and adjust
+   blank-line counts if needed.
+3. Recalibrate all frame-based timing constants (keyboard repeat, cursor blink,
+   scheduler ticks, and any disk timeout logic measured in frames).
+4. Re-check GTIA palette choices on NTSC displays/emulators and adjust hues/luma
+   where readability or UI contrast regresses.
+5. Re-run integration tests from Phase 6 under NTSC to confirm no PAL-only timing
+   assumptions remain.
