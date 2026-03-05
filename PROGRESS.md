@@ -8,7 +8,7 @@ Update rule: after each completed porting step, change exactly one matching chec
 
 - [x] 1. Add `atarixl` variant to `Makefile` and `config.inc`
 - [x] 2. Create `inc/atari.inc`
-- [ ] 3. Derive `kernal/kernal_atarixl.cfg` from `kernal_bsw.cfg`; adjust addresses
+- [x] 3. Derive `kernal/kernal_atarixl.cfg` from `kernal_bsw.cfg`; adjust addresses
 - [ ] 4. Shift GEOS zero page to `$80` in `inc/geossym.inc`; wrap `START_IO`/`CLEAR_IO` in `inc/geosmac.inc`
 - [ ] 5. Verify the build completes without assembler errors (binary will be non-functional)
 
