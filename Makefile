@@ -286,6 +286,9 @@ endif
 
 all: $(BUILD_DIR)/$(D64_RESULT)
 
+atarixl:
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari all
+
 regress:
 	@echo "********** Building variant 'bsw'"
 	@$(MAKE) VARIANT=bsw all

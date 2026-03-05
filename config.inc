@@ -96,6 +96,20 @@ config_inc = 1
 	; throughout the code
 .endif
 
+;------------------------
+; the Atari 800 XL variant
+;------------------------
+.ifdef atarixl
+	PLATFORM        = 1       ; 0=C64, 1=Atari XL
+	VIDEO_STD       = 0       ; 0=PAL (first release), 1=NTSC
+	VBI_HZ          = 50      ; PAL frame rate baseline
+	BITMAP_BASE     = $4000   ; 320x200 monochrome bitmap
+	KERNAL_BASE     = $C000   ; KERNAL base in RAM
+	INPUT_BASE      = $FD00   ; input driver base
+	DISK_BASE       = $9000   ; disk driver base
+	ZP_BASE         = $80     ; Atari OS owns $00-$7F
+.endif
+
 .ifdef custom
 	; make use of all reusable Wheels optimizations and fixes
 	wheels_size = 1
