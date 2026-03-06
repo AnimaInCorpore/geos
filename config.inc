@@ -106,7 +106,6 @@ config_inc = 1
 	BITMAP_BASE     = $4000   ; 320x200 monochrome bitmap
 	KERNAL_BASE     = $C000   ; KERNAL base in RAM
 	INPUT_BASE      = $FD00   ; input driver base
-	DISK_BASE       = $9000   ; disk driver base
 	ZP_BASE         = $80     ; Atari OS owns $00-$7F
 .endif
 
@@ -186,6 +185,8 @@ DRV_TYPE = 1 ; DRV_1541
 DRV_TYPE = 2; DRV_1571
 .elseif .defined(drv1581)
 DRV_TYPE = 3; DRV_1581
+.elseif .defined(drv1050)
+DRV_TYPE = 1 ; temporary alias during Atari phase-1 bring-up
 .else
 .error "Unknown drive type!"
 .endif

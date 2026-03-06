@@ -372,6 +372,17 @@ else
 endif
 ```
 
+### Local toolchain note (macOS/Homebrew)
+
+For assembler compatibility checks during Atari XL bring-up, these alternatives are
+installed locally in addition to `cc65`:
+
+- `acme` (`brew install acme`)
+- `64tass` (`brew install 64tass`, formula name: `tass64`)
+- `xa` (`brew install xa`)
+
+The project build still uses `ca65`/`ld65` by default.
+
 ### `config.inc` additions
 
 ```asm
@@ -1263,6 +1274,13 @@ boundary handling (see §6.8).
 Phase 2 gate before considering step 9 done:
 - Replace C64 tiled framebuffer address helpers with Atari linear scanline LUT helpers.
 - Validate drawing across the LMS jump boundary (`y=101` to `y=102`) to ensure no wrap artifacts.
+
+Optional jsA8E smoke path (pre-check only, not sign-off):
+- UI path: `third_party/A8E/jsA8E/index.html`
+- Run from repo root: `python3 -m http.server 8765`, then open `http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html`
+- Load `ATARIXL.ROM` + `ATARIBAS.ROM` via the jsA8E file inputs (or place them at `third_party/A8E/` for auto-load).
+- Use this to quickly smoke-test bring-up visuals before Altirra runs.
+- Step completion for phases that call out Altirra (for example 8, 9, 20) still requires Altirra validation.
 
 ### Phase 3: Bring up input (OS-assisted mode)
 10. Write `input/joydrv_atari.s`

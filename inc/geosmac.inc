@@ -341,6 +341,23 @@
 .macro END_IO_128
 	PopB config
 .endmacro
+.elseif .defined(atarixl)
+.macro START_IO
+.endmacro
+.macro END_IO
+.endmacro
+.macro START_IO_X
+.endmacro
+.macro END_IO_X
+.endmacro
+.macro START_IO_Y
+.endmacro
+.macro END_IO_Y
+.endmacro
+.macro START_IO_128
+.endmacro
+.macro END_IO_128
+.endmacro
 .else
 .macro START_IO
 	PushB CPU_DATA

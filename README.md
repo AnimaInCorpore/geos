@@ -70,7 +70,11 @@ Optionally, the following features that were not part of the original GEOS 2.0 c
 ## Requirements
 
 * make, bash, dd
-* [cc65](https://github.com/cc65/cc65) for assembling and linking
+* [cc65](https://github.com/cc65/cc65) (`ca65`/`ld65`) for assembling and linking
+* Optional Atari/6502 assembler alternatives for cross-checking source compatibility:
+  * [ACME](https://sourceforge.net/projects/acme-crossass/) (`brew install acme`)
+  * [64tass](https://tass64.sourceforge.net/) (`brew install 64tass`, binary: `64tass`)
+  * [xa](https://www.floodgap.com/retrotech/xa/) (`brew install xa`)
 * [pucrunch](https://github.com/mist64/pucrunch) for generating a compressed executable
 * [c1541](http://vice-emu.sourceforge.net) for generating the disk image
 
@@ -105,6 +109,34 @@ You can build a specific variant like this:
     make VARIANT=<variant>
 
 All output will be put into `build/<variant>`.
+
+## Atari XL Smoke Testing (jsA8E)
+
+For quick Atari XL bring-up smoke checks, use the bundled browser emulator in the
+A8E submodule:
+
+* UI path: `third_party/A8E/jsA8E/index.html`
+* Run from repository root:
+
+    python3 -m http.server 8765
+
+  then open:
+
+    http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html
+
+* Load ROMs via the jsA8E UI file inputs:
+  * `ATARIXL.ROM` (16 KB)
+  * `ATARIBAS.ROM` (8 KB)
+
+jsA8E auto-loads ROMs from `../ATARIXL.ROM` and `../ATARIBAS.ROM` relative to its
+page. With the URL above, that means:
+`third_party/A8E/ATARIXL.ROM` and `third_party/A8E/ATARIBAS.ROM`.
+
+Use jsA8E as a fast smoke-test path only. Keep Altirra as the sign-off emulator
+for Atari porting step completion.
+
+For Altirra setup and local placement in `third_party/`, see:
+`third_party/Altirra/README.md`.
 
 ## Drivers
 

@@ -68,11 +68,7 @@ KERNAL_SOURCES= \
 	kernal/init/init2.s \
 	kernal/init/init3.s \
 	kernal/init/init4.s \
-	kernal/irq/irq.s \
 	kernal/jumptab/jumptab.s \
-	kernal/keyboard/keyboard1.s \
-	kernal/keyboard/keyboard2.s \
-	kernal/keyboard/keyboard3.s \
 	kernal/load/deskacc.s \
 	kernal/load/load1a.s \
 	kernal/load/load1b.s \
@@ -119,10 +115,21 @@ KERNAL_SOURCES= \
 	kernal/tobasic/tobasic2.s \
 	kernal/vars/vars.s
 
+ifneq ($(VARIANT), atarixl)
+	KERNAL_SOURCES += \
+	kernal/keyboard/keyboard1.s \
+	kernal/keyboard/keyboard2.s \
+	kernal/keyboard/keyboard3.s \
+	kernal/irq/irq.s
+endif
+
 # code that is in front bank of C64 only
 ifneq ($(VARIANT), bsw128)
+ifneq ($(VARIANT), atarixl)
 	KERNAL_SOURCES += \
-	kernal/start/start64.s \
+	kernal/start/start64.s
+endif
+	KERNAL_SOURCES += \
 	kernal/bitmask/bitmask1.s \
 	kernal/bitmask/bitmask3.s \
 	kernal/bswfont/bswfont.s \
@@ -146,6 +153,14 @@ ifneq ($(VARIANT), bsw128)
 	kernal/ramexp/ramexp2.s \
 	kernal/rename.s \
 	kernal/tobasic/tobasic1.s
+endif
+
+ifeq ($(VARIANT), atarixl)
+	KERNAL_SOURCES += \
+	kernal/hw/hw_atari.s \
+	kernal/irq/irq_atari.s \
+	kernal/keyboard/keyboard_atari.s \
+	kernal/start/start_atari.s
 endif
 
 # code that is in front bank of C128 only
@@ -232,9 +247,11 @@ RELOCATOR_SOURCES = \
 endif
 
 DRIVER_SOURCES= \
+	drv/drv1050.bin \
 	drv/drv1541.bin \
 	drv/drv1571.bin \
 	drv/drv1581.bin \
+	input/joydrv_atari.bin \
 	input/joydrv.bin \
 	input/amigamse.bin \
 	input/lightpen.bin \
@@ -268,9 +285,11 @@ PREFIXED_RELOCATOR_OBJS = $(addprefix $(BUILD_DIR)/, $(RELOCATOR_OBJS))
 
 ALL_BINS= \
 	$(BUILD_DIR)/kernal/kernal.bin \
+	$(BUILD_DIR)/drv/drv1050.bin \
 	$(BUILD_DIR)/drv/drv1541.bin \
 	$(BUILD_DIR)/drv/drv1571.bin \
 	$(BUILD_DIR)/drv/drv1581.bin \
+	$(BUILD_DIR)/input/joydrv_atari.bin \
 	$(BUILD_DIR)/input/joydrv.bin \
 	$(BUILD_DIR)/input/amigamse.bin \
 	$(BUILD_DIR)/input/lightpen.bin \
@@ -334,6 +353,9 @@ ifeq ($(VARIANT), bsw128)
 	# start address ($4800) is underneath BASIC ROM on the 128; turn off BASIC
 	# and KERNAL before jumping to unpacked code
 	$(EXOMIZER) sfx 0x4800 -t128 -Di_ram_exit='$$3e' -o $@ $<
+else ifeq ($(VARIANT), atarixl)
+	# pucrunch is optional in local setups; use exomizer for atarixl bring-up
+	$(EXOMIZER) sfx 0x5000 -t64 -o $@ $<
 else
 	$(PUCRUNCH) -f -c64 -x0x5000 $< $@ 2> /dev/null
 endif
@@ -373,11 +395,16 @@ else
 	@mv $(BUILD_DIR)/tmp.bin $(BUILD_DIR)/kernal_combined.prg
 endif
 
-ifeq ($(VARIANT),bsw128)
+ifeq ($(VARIANT),atarixl)
+INPUTCFG = input/inputdrv_atarixl.cfg
+else ifeq ($(VARIANT),bsw128)
 INPUTCFG = input/inputdrv_bsw128.cfg
 else
 INPUTCFG = input/inputdrv.cfg
 endif
+
+$(BUILD_DIR)/drv/drv1050.bin: $(BUILD_DIR)/drv/drv1050.o drv/drv1050.cfg $(DEPS)
+	$(LD) -C drv/drv1050.cfg $(BUILD_DIR)/drv/drv1050.o -o $@
 
 $(BUILD_DIR)/drv/drv1541.bin: $(BUILD_DIR)/drv/drv1541.o drv/drv1541.cfg $(DEPS)
 	$(LD) -C drv/drv1541.cfg $(BUILD_DIR)/drv/drv1541.o -o $@
@@ -387,6 +414,9 @@ $(BUILD_DIR)/drv/drv1571.bin: $(BUILD_DIR)/drv/drv1571.o drv/drv1571.cfg $(DEPS)
 
 $(BUILD_DIR)/drv/drv1581.bin: $(BUILD_DIR)/drv/drv1581.o drv/drv1581.cfg $(DEPS)
 	$(LD) -C drv/drv1581.cfg $(BUILD_DIR)/drv/drv1581.o -o $@
+
+$(BUILD_DIR)/input/joydrv_atari.bin: $(BUILD_DIR)/input/joydrv_atari.o $(INPUTCFG) $(DEPS)
+	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/joydrv_atari.o -o $@
 
 $(BUILD_DIR)/input/amigamse.bin: $(BUILD_DIR)/input/amigamse.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/amigamse.o -o $@
