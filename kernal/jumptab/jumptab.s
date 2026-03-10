@@ -755,18 +755,15 @@ DoRAMOp:
 
 .ifdef atarixl
 AtariEnterTurboShim:
-	; Atari 810/1050 bring-up has no turbo transport yet, so keep the
-	; public GEOS call surface intact and return success immediately.
-	ldx #0
-	rts
+	; Route through the Atari driver entry so the public GEOS surface stays
+	; intact while the driver remains free to keep turbo as a no-op/shim.
+	jmp (_EnterTurbo)
 
 AtariExitTurboShim:
-	ldx #0
-	rts
+	jmp (_ExitTurbo)
 
 AtariPurgeTurboShim:
-	ldx #0
-	rts
+	jmp (_PurgeTurbo)
 .endif
 
 .ifdef bsw128
