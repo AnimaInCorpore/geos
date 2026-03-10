@@ -1094,7 +1094,8 @@ _WriteBlock:
 ```
 
 This 2:1 mapping is entirely internal to the driver. All GEOS file-system code above
-the driver sees unmodified 256-byte blocks and unchanged `$FE` payload constants.
+the driver sees unmodified 256-byte blocks and the same 254-byte payload semantics,
+whether those values remain as `$FE` literals or are consolidated into named constants.
 
 **BAM (Block Availability Map) checklist:**
 - The C64 BAM maps 35 tracks. The Atari needs a new BAM for 40 tracks.
@@ -1276,15 +1277,9 @@ Phase 2 gate before considering step 9 done:
 - Validate drawing across the LMS jump boundary (`y=101` to `y=102`) to ensure no wrap artifacts.
 
 Optional jsA8E automation path (repeatable browser-side evidence and diagnostics; not Altirra sign-off):
-- Serve from repo root with `python -m http.server 8765`.
-- Preferred path: open `http://127.0.0.1:8765/tools/jsa8e_automation_smoketest.html` and drive the current smoke XEXs through `window.A8EAutomation`.
-- Manual fallback: open `http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html` and load `ATARIXL.ROM` + `ATARIBAS.ROM` via the file inputs (or place them at `third_party/A8E/` for auto-load).
-- Recommended jsA8E automation mapping:
-  - Phase 2 / step 8 browser automation: `make atarixl-smoketest`, then run the `Phase 2 display` scenario to boot `build/atarixl/phase2_smoketest.xex` and capture a framebuffer screenshot.
-  - Phase 3 / step 13 browser automation: `make atarixl-input-smoketest`, then run the `Phase 3 input` scenario to inject joystick + keyboard events and capture before/after screenshots.
-  - Phase 4 diagnostic automation: `make atarixl-disk-smoketest`, then run the `Phase 4 disk` scenario to boot `build/atarixl/phase4_disk_smoketest.xex`, swap `build/atarixl/phase4_disk_test.atr` into `D1:` at `$0501`, and collect screenshot + trace + `$04E7-$04F5` smoke markers.
-- Treat the jsA8E Phase 4 flow as a high-signal diagnostic path rather than final sign-off, because it still approximates the final setup by swapping `D1:` after the XEX boot loader reaches `$0501`.
-- Step completion for phases that call out Altirra (for example 8, 9, 20) still requires Altirra validation, and Phase 4 conclusions from jsA8E should be re-checked in Altirra before sign-off.
+- Use the smoke-test workflows documented in `README.md` ("Atari XL Smoke Testing (jsA8E)") and `JSA8E_AUTOMATION.md`.
+- Keep Altirra as the required sign-off path for steps that explicitly call it out (for example 8, 9, and 20).
+- Treat the jsA8E Phase 4 flow as a diagnostic path only, because it still approximates the final setup by swapping `D1:` after the XEX loader reaches `$0501`.
 
 ### Phase 3: Bring up input (OS-assisted mode)
 10. Write `input/joydrv_atari.s`
@@ -1295,13 +1290,12 @@ Optional jsA8E automation path (repeatable browser-side evidence and diagnostics
 ### Phase 4: Bring up disk (OS-assisted mode, SIOV active)
 14. Write `drv/drv1050.s` using OS `jsr SIOV`
 15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool
-16. Audit and fix all `$FE`/`#254` sector-payload literals in `kernal/files/` (see §6.7)
+16. Audit sector-payload references in `kernal/files/`; replace hard-coded `$FE`/`#254` literals with named 256-byte-block constants where needed, without changing GEOS block semantics (see §6.7)
 17. Test: directory listing, file read, file write, disk full detection
 
 Phase 4 gate before considering step 17 done:
 - Make `EnterTurbo`/`ExitTurbo`/`PurgeTurbo` Atari-safe first. Baseline Atari 1050 bring-up can treat them as compatibility no-ops (or a tiny state-only shim) until a real acceleration path exists.
-- Use `build/atarixl/phase4_disk_smoketest.xex` with `build/atarixl/phase4_test.ini` in Altirra (`800XL`, `64K`, `PAL`, `1050`) and set `"Simulator: Error mode" = 2` so CPU traps stay inspectable instead of hiding behind a modal dialog.
-- Optional browser-side automation/diagnostic path: `tools/jsa8e_automation_smoketest.html` can capture screenshot, trace tail, and the `$04E7-$04F5` `PHASE4_*` marker block after swapping `build/atarixl/phase4_disk_test.atr` into `D1:` at the smoke XEX entry breakpoint (`$0501`); use this as the primary browser-side iteration path, but not as the final sign-off path.
+- Use the documented Phase 4 smoke harnesses from `README.md` / `JSA8E_AUTOMATION.md`: Altirra with `build/atarixl/phase4_test.ini` and `"Simulator: Error mode" = 2` for sign-off-grade debugging, and the jsA8E smoke path for faster browser-side iteration and artifact capture.
 - Require the smoke path to advance past `OpenDisk -> GetDirHead -> EnterTurbo -> ReadBlock`; current known stop is an illegal instruction at `$01FA` reached from `drv1050.__GetDirHead` before `ReadBlock`.
 - Only sign off step 17 after directory listing, sequential file read/write, and disk-full detection all pass on Atari `.atr` images such as `build/atarixl/geos.atr` and `build/atarixl/blank_geos.atr`.
 
@@ -1390,11 +1384,12 @@ then add raw/high-speed SIO later as an optimization.
 temporary low-RAM `RTI` NMI stub) to avoid dispatching into unexpected handlers.
 
 **Sector abstraction in the disk driver.** Do not change the GEOS 256-byte logical
-block size or any `$FE` payload literals in `kernal/files/`. The driver at $9000 must
-map each 256-byte GEOS block to two consecutive 128-byte physical Atari SD sectors
-(see §6.7). Changing the logical block size would require rewriting the entire VLIR
-file system and is not feasible. Target a stock Atari 810 or 1050 first; add XF551
-true-DD (256-byte sector) support later as an optional fast-path in the driver.
+block size or the meaning of the 254-byte payload values used in `kernal/files/`.
+Those literals may be consolidated into named constants, but the driver at $9000 must
+still map each 256-byte GEOS block to two consecutive 128-byte physical Atari SD
+sectors (see §6.7). Changing the logical block size would require rewriting the entire
+VLIR file system and is not feasible. Target a stock Atari 810 or 1050 first; add
+XF551 true-DD (256-byte sector) support later as an optional fast-path in the driver.
 
 **`CPU_DATA` / $01.** The `START_IO`/`CLEAR_IO` macros save and manipulate the
 C64's CPU I/O port at $01. On Atari, $01 is ordinary RAM. Make these macros no-ops
