@@ -52,6 +52,7 @@ For direct automation, launch Chrome with remote debugging enabled:
 ```powershell
 & 'C:\Program Files\Google\Chrome\Application\chrome.exe' `
   --remote-debugging-port=9222 `
+  --remote-allow-origins=http://127.0.0.1:9222 `
   --user-data-dir="$env:TEMP\codex-jsa8e-profile" `
   --headless=new `
   --disable-gpu `
@@ -66,6 +67,15 @@ Then attach through the Chrome DevTools Protocol (`/json/list` ->
 `webSocketDebuggerUrl`) and evaluate in the page that owns
 `window.A8EAutomation`.
 
+Two practical notes from recent runs:
+
+* Recent Chrome builds reject the DevTools WebSocket with HTTP 403 unless the
+  launch command includes a matching `--remote-allow-origins=...` flag (or `*`
+  if you explicitly want that).
+* Use a fresh remote-debugging port and/or a fresh `--user-data-dir` for each
+  scripted run when possible. Reusing an older Chrome instance can make CDP
+  attach to the wrong tab or inherit stale origin-policy state.
+
 ## Direct Automation Rules
 
 When driving jsA8E directly:
@@ -78,6 +88,10 @@ When driving jsA8E directly:
 4. Prefer `dev.runXexFromUrl("/build/atarixl/....xex")` and
    `media.mountDiskFromUrl("/build/atarixl/....atr")` over manual fetch-plus-buffer
    handoff.
+   Do not use `../build/...` from the harness page: the embedded iframe runs at
+   `/third_party/A8E/jsA8E/index.html`, so jsA8E resolves media URLs relative to
+   that location and `../build/...` incorrectly points at `/third_party/A8E/build/...`
+   instead of the repo-root `/build/...` tree.
 5. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
    media issues. The progress phases now distinguish resource fetch, media
    acceptance, loader installation, loader execution, entry-PC success, and
@@ -88,6 +102,10 @@ When driving jsA8E directly:
    and an optional screenshot.
 7. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
    `debug.runUntilPcOrSnapshot(...)` before writing one-off harness code.
+8. In headless CDP runs, do not assume the harness query string
+   (`?scenario=...&autorun=1`) is sufficient evidence that a scenario actually
+   started. Confirm via the harness DOM/log state, or set the scenario and
+   trigger the run explicitly through CDP.
 
 ## Per-Scenario Recipes
 
@@ -195,6 +213,9 @@ At that point:
 
 * `D1:` is still not mounted
 * no `PHASE4_*` markers are available yet
+* `bankState.portB` is a high-value clue and should be captured with the failure
+  bundle. In this session the timeout state showed `PORTB=$7F`, which is
+  consistent with XL self-test ROM being visible at `$5000-$57FF` instead of RAM.
 * useful follow-up artifacts are:
   * the structured failure bundle from `waitForBreakpoint(...)`
   * paused `debugState`

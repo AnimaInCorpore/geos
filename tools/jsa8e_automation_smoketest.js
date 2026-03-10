@@ -4,8 +4,8 @@
   const ENTRY_PC = 0x0501;
   const DEFAULT_TIMEOUT_MS = 15000;
   const ROM_PATHS = {
-    os: "../ATARIXL.ROM",
-    basic: "../ATARIBAS.ROM",
+    os: "/ATARIXL.ROM",
+    basic: "/ATARIBAS.ROM",
   };
   const PHASE4_MARKER_RANGE = { label: "phase4_markers", start: 0x04e7, length: 0x0f };
   const BITMAP_HEAD_RANGE = { label: "bitmap_head", start: 0x4000, length: 0x40 };
@@ -16,7 +16,7 @@
       id: "phase2_display",
       label: "Phase 2 display",
       prereq: "make atarixl-smoketest",
-      xexPath: "../build/atarixl/phase2_smoketest.xex",
+      xexPath: "/build/atarixl/phase2_smoketest.xex",
       description:
         "Boot the low-RAM Phase 2 display harness, let the static bitmap settle, then capture a screenshot and a small framebuffer dump.",
       caveat: "Repeatable browser automation path. Step sign-off still stays in Altirra.",
@@ -26,7 +26,7 @@
       id: "phase3_input",
       label: "Phase 3 input",
       prereq: "make atarixl-input-smoketest",
-      xexPath: "../build/atarixl/phase3_input_smoketest.xex",
+      xexPath: "/build/atarixl/phase3_input_smoketest.xex",
       description:
         "Boot the input smoke harness, inject joystick and keyboard activity through the public automation API, and capture before/after screenshots.",
       caveat: "Repeatable browser automation and smoke evidence path, not final input timing sign-off.",
@@ -36,8 +36,8 @@
       id: "phase4_disk",
       label: "Phase 4 disk",
       prereq: "make atarixl-disk-smoketest",
-      xexPath: "../build/atarixl/phase4_disk_smoketest.xex",
-      diskPath: "../build/atarixl/phase4_disk_test.atr",
+      xexPath: "/build/atarixl/phase4_disk_smoketest.xex",
+      diskPath: "/build/atarixl/phase4_disk_test.atr",
       description:
         "Boot the Phase 4 XEX to its $0501 entry breakpoint, replace D1 with the writable ATR, then collect screenshot, trace, and PHASE4_* marker bytes.",
       caveat:

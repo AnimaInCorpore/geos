@@ -800,9 +800,11 @@ DoSioSectorIO:
 	lda sioSectorH
 	sta DAUX2
 	php
+	lda PBCTL
+	pha
 	lda NMIEN
 	pha
-	lda #$40
+	lda #$00
 	sta NMIEN
 	lda #$3c
 	sta PBCTL
@@ -816,9 +818,15 @@ DoSioSectorIO:
 	pla
 	sta savedPortB
 	pla
-	sta NMIEN
+	sta savedNMIEN
+	pla
+	sta savedPBCTL
 	lda savedPortB
 	sta PORTB
+	lda savedPBCTL
+	sta PBCTL
+	lda savedNMIEN
+	sta NMIEN
 	plp
 	tya
 	bmi SioError
@@ -855,6 +863,10 @@ SetupSioDCB:
 	rts
 
 savedPortB:
+	.byte 0
+savedPBCTL:
+	.byte 0
+savedNMIEN:
 	.byte 0
 
 MapSIOError:
