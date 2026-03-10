@@ -12,6 +12,13 @@
 
 .global _GetScanLine
 
+.ifdef atarixl
+.import AtariRowBaseLo
+.import AtariRowBaseHi
+.import AtariBackRowBaseLo
+.import AtariBackRowBaseHi
+.endif
+
 .segment "graph2n"
 
 ;---------------------------------------------------------------
@@ -25,6 +32,23 @@
 ; Destroyed: a
 ;---------------------------------------------------------------
 _GetScanLine:
+.ifdef atarixl
+	lda AtariRowBaseLo,x
+	sta r5L
+	lda AtariRowBaseHi,x
+	sta r5H
+	lda AtariBackRowBaseLo,x
+	sta r6L
+	lda AtariBackRowBaseHi,x
+	sta r6H
+	bbsf 7, dispBufferOn, @foreEnabled
+	MoveW r6, r5
+@foreEnabled:
+	bbsf 6, dispBufferOn, @backEnabled
+	MoveW r5, r6
+@backEnabled:
+	rts
+.else
 .ifdef bsw128
 	bbrf 7, graphMode, @X
 	jmp GSC80
@@ -175,12 +199,14 @@ GSC80_6:
 	tax
 	rts
 .endif
+.endif
 
 .segment "graph2o"
 
+.ifndef atarixl
 .define LineTab SCREEN_BASE+0*320, SCREEN_BASE+1*320, SCREEN_BASE+2*320, SCREEN_BASE+3*320, SCREEN_BASE+4*320, SCREEN_BASE+5*320, SCREEN_BASE+6*320, SCREEN_BASE+7*320, SCREEN_BASE+8*320, SCREEN_BASE+9*320, SCREEN_BASE+10*320, SCREEN_BASE+11*320, SCREEN_BASE+12*320, SCREEN_BASE+13*320, SCREEN_BASE+14*320, SCREEN_BASE+15*320, SCREEN_BASE+16*320, SCREEN_BASE+17*320, SCREEN_BASE+18*320, SCREEN_BASE+19*320, SCREEN_BASE+20*320, SCREEN_BASE+21*320, SCREEN_BASE+22*320, SCREEN_BASE+23*320, SCREEN_BASE+24*320
 LineTabL:
 	.lobytes LineTab
 LineTabH:
 	.hibytes LineTab
-
+.endif

@@ -1,0 +1,5 @@
+.autotest_wait frame>300
+.autotest_saveimage "build/atarixl/phase4_disk_wait.png"
+.autotest_assert db($04ef)=$ff "Phase 4 disk smoketest did not finish"
+.autotest_assert db($04ee)=$0f "Phase 4 disk smoketest result bits are incomplete"
+.autotest_exit

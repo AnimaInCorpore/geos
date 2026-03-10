@@ -14,6 +14,8 @@
 .global InitAtariPM
 .global AtariRowBaseLo
 .global AtariRowBaseHi
+.global AtariBackRowBaseLo
+.global AtariBackRowBaseHi
 
 BITMAP_LMS0 = BITMAP_BASE
 BITMAP_LMS1 = BITMAP_BASE + $1000
@@ -114,4 +116,14 @@ AtariRowBaseHi:
 	.endrepeat
 	.repeat 98, I
 		.byte >(BITMAP_LMS1 + (I * 40))
+	.endrepeat
+
+AtariBackRowBaseLo:
+	.repeat 200, I
+		.byte <(BACK_SCR_BASE + (I * 40))
+	.endrepeat
+
+AtariBackRowBaseHi:
+	.repeat 200, I
+		.byte >(BACK_SCR_BASE + (I * 40))
 	.endrepeat

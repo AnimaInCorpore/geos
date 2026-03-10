@@ -1,0 +1,4 @@
+.autotest_wait db($04ef)=$ff
+.autotest_assert db($04ee)=$0f "Phase 4 disk smoketest failed"
+.autotest_saveimage "build/atarixl/phase4_disk_smoketest.png"
+.autotest_exit

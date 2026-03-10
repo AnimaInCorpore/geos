@@ -55,7 +55,7 @@ _ReadFile:
 	MoveW r1, fileTrScTab+2
 @1:	jsr ReadBlock
 	bnex @7
-	ldy #$fe
+	ldy #GEOS_BLOCK_DATA_LAST
 	lda diskBlkBuf
 	bne @2
 	ldy diskBlkBuf+1
@@ -249,4 +249,3 @@ FlaggedPutBlock:
 	jmp VerWriteBlock
 @1:	jmp WriteBlock
 .endif
-

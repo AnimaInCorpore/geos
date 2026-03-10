@@ -151,7 +151,11 @@ iniMaxMouseSpeed        = $7f                           ; range from $00-$7f
 iniMinMouseSpeed        = $1e                           ;
 iniMouseAccel           = $7f                           ;
 
+.ifdef atarixl
+currentInterleave       = 3                             ; logical GEOS sectors on Atari SD media
+.else
 currentInterleave       = 8                             ; 8 for 1541, 6 for 1571
+.endif
 SelectFlashDelay        = 10                            ; 10 in 1/50 s
 
 ; if both menu separator patterns are null, then kernal menu code

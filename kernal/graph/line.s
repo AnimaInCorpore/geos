@@ -44,6 +44,49 @@
 .segment "graph2a"
 
 PrepareXCoord:
+.ifdef atarixl
+	lda r4H
+	cmp r3H
+	bne @cmpDone
+	lda r4L
+	cmp r3L
+@cmpDone:
+	bcs @coordsReady
+	ldx r3L
+	lda r4L
+	sta r3L
+	stx r4L
+	ldx r3H
+	lda r4H
+	sta r3H
+	stx r4H
+@coordsReady:
+	ldx r11L
+	jsr _GetScanLine
+	lda r4L
+	and #%00000111
+	tax
+	lda BitMaskLeadingClear,x
+	sta r8H
+	lda r3L
+	and #%00000111
+	tax
+	lda BitMaskLeadingSet,x
+	sta r8L
+	lsr r3H
+	ror r3L
+	lsr r3H
+	ror r3L
+	lsr r3H
+	ror r3L
+	lsr r4H
+	ror r4L
+	lsr r4H
+	ror r4L
+	lsr r4H
+	ror r4L
+	rts
+.else
 .ifdef bsw128
 	jsr _TempHideMouse
 	ldx #r3
@@ -95,6 +138,7 @@ PrepareXCoord:
 @4:
 .endif
 	rts
+.endif
 
 .ifdef wheels_size
 .import WheelsTemp
@@ -186,6 +230,34 @@ _HorizontalLine:
 	PushW r3
 	PushW r4
 	jsr PrepareXCoord
+.ifdef atarixl
+	ldy r3L
+	lda r3L
+	cmp r4L
+	beq @singleByte
+	lda r8L
+	jsr HLineHelp
+	sta (r6),Y
+	sta (r5),Y
+	iny
+@middleBytes:
+	cpy r4L
+	beq @lastByte
+	lda r7L
+	sta (r6),Y
+	sta (r5),Y
+	iny
+	bne @middleBytes
+@lastByte:
+	lda r8H
+	jsr HLineHelp
+	bra HLinEnd1
+@singleByte:
+	lda r8L
+	ora r8H
+	jsr HLineHelp
+	bra HLinEnd1
+.else
 .ifdef bsw128
 	php
 	bbsf 7, graphMode, HLin80
@@ -236,6 +308,17 @@ HLinEnd2:
 	PopW r4
 	PopW r3
 	rts
+.endif
+
+.ifdef atarixl
+HLinEnd1:
+	sta (r6),Y
+	sta (r5),Y
+HLinEnd2:
+	PopW r4
+	PopW r3
+	rts
+.endif
 
 .ifdef bsw128
 HLin80:	plp

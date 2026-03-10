@@ -661,7 +661,7 @@ MoveBackVLIRTab:
 	iny
 	dex
 	bne @1
-@2:	stx fileHeader+$fe
+@2:	stx fileHeader+VLIR_REC_LAST
 	stx fileHeader+$ff
 	dec usedRecords
 @3:	rts
@@ -673,7 +673,7 @@ MoveForwVLIRTab:
 	ldx #INV_RECORD
 	lda r0L
 	bmi @3
-	ldy #$fe
+	ldy #VLIR_REC_LAST
 	lda #$7e
 	sub r0L
 	asl
@@ -782,4 +782,3 @@ _ReadByte:
 @3:	inx
 	stx r5L
 	bra _ReadByte
-

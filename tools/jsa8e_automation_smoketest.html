@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jsA8E Atari XL Smoke Automation</title>
+  <style>
+    :root {
+      --paper: #f5efe2;
+      --ink: #182126;
+      --muted: #59656d;
+      --panel: #fffaf0;
+      --edge: #d2c4a8;
+      --accent: #a34a28;
+      --accent-soft: #f3d9c7;
+      --screen: #10171b;
+      --shadow: 0 18px 40px rgba(24, 33, 38, 0.12);
+      --mono: "Consolas", "SFMono-Regular", "Liberation Mono", monospace;
+      --sans: "Aptos", "Segoe UI", "Trebuchet MS", sans-serif;
+      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, rgba(163, 74, 40, 0.18), transparent 32rem),
+        linear-gradient(180deg, #efe7d5 0%, var(--paper) 48%, #efe7d5 100%);
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      padding: 0.7rem 1.1rem;
+      background: var(--accent);
+      color: #fff7ef;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+      box-shadow: 0 8px 20px rgba(163, 74, 40, 0.18);
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.75;
+      box-shadow: none;
+    }
+
+    .page {
+      display: grid;
+      grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+      gap: 1.25rem;
+      min-height: 100vh;
+      padding: 1.25rem;
+    }
+
+    .panel {
+      background: color-mix(in srgb, var(--panel) 92%, white 8%);
+      border: 1px solid var(--edge);
+      border-radius: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .sidebar > .panel {
+      padding: 1.1rem 1rem;
+    }
+
+    .title {
+      font-family: var(--serif);
+      font-size: clamp(1.8rem, 2vw, 2.5rem);
+      line-height: 1;
+      margin: 0 0 0.5rem;
+    }
+
+    .lede {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .field {
+      display: grid;
+      gap: 0.45rem;
+    }
+
+    .field label {
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    select {
+      width: 100%;
+      padding: 0.75rem 0.85rem;
+      border-radius: 0.85rem;
+      border: 1px solid var(--edge);
+      background: #fffdf8;
+      color: var(--ink);
+    }
+
+    .meta {
+      display: grid;
+      gap: 0.55rem;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.96rem;
+    }
+
+    .meta strong {
+      color: var(--ink);
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .secondary {
+      background: transparent;
+      color: var(--accent);
+      box-shadow: none;
+    }
+
+    .notes {
+      display: grid;
+      gap: 0.5rem;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.95rem;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-radius: 999px;
+      padding: 0.3rem 0.65rem;
+      font-size: 0.86rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .workspace {
+      display: grid;
+      gap: 1rem;
+      min-width: 0;
+    }
+
+    .frame-panel,
+    .artifacts-panel,
+    .json-panel {
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1rem 0;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+
+    iframe {
+      width: 100%;
+      min-height: 44rem;
+      border: 0;
+      background: var(--screen);
+      display: block;
+      border-radius: 0 0 1.25rem 1.25rem;
+    }
+
+    .results {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      gap: 1rem;
+    }
+
+    .summary {
+      display: grid;
+      gap: 0.45rem;
+      padding: 0 1rem 1rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .summary strong {
+      color: var(--ink);
+    }
+
+    .gallery {
+      display: grid;
+      gap: 0.85rem;
+      padding: 0 1rem 1rem;
+    }
+
+    .shot {
+      border: 1px solid var(--edge);
+      border-radius: 1rem;
+      overflow: hidden;
+      background: #fffdf8;
+    }
+
+    .shot-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.8rem 0.9rem;
+      border-bottom: 1px solid var(--edge);
+      background: #fbf5e8;
+    }
+
+    .shot-head strong {
+      display: block;
+    }
+
+    .shot-head span {
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .shot img {
+      display: block;
+      width: 100%;
+      background: #111;
+      image-rendering: pixelated;
+    }
+
+    .shot a {
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    pre {
+      margin: 0;
+      font: 0.9rem/1.45 var(--mono);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .log {
+      min-height: 16rem;
+      max-height: 26rem;
+      overflow: auto;
+      padding: 0.95rem;
+      background: #11181d;
+      color: #d9e6e4;
+      border-radius: 1rem;
+    }
+
+    .json-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1rem 0.8rem;
+    }
+
+    .json {
+      min-height: 28rem;
+      max-height: 44rem;
+      overflow: auto;
+      padding: 1rem;
+      background: #171d22;
+      color: #d7e3f1;
+      border-top: 1px solid rgba(210, 196, 168, 0.55);
+    }
+
+    @media (max-width: 1200px) {
+      .page,
+      .results {
+        grid-template-columns: 1fr;
+      }
+
+      iframe {
+        min-height: 36rem;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        padding: 0.8rem;
+        gap: 0.8rem;
+      }
+
+      iframe {
+        min-height: 30rem;
+      }
+
+      .panel-head,
+      .json-head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside class="sidebar">
+      <section class="panel">
+        <h1 class="title">jsA8E Smoke Automation</h1>
+        <p class="lede">
+          Browser-side Atari XL smoke harness for the local GEOS port. It drives
+          <code>window.A8EAutomation</code> directly and is intended for quick
+          iteration, screenshots, and failure artifacts before Altirra sign-off.
+        </p>
+      </section>
+
+      <section class="panel field">
+        <label for="scenarioSelect">Scenario</label>
+        <select id="scenarioSelect"></select>
+        <div id="scenarioMeta" class="meta"></div>
+        <div class="actions">
+          <button id="runButton" type="button">Run Scenario</button>
+          <button id="clearButton" type="button" class="secondary">Clear Log</button>
+        </div>
+      </section>
+
+      <section class="panel notes">
+        <span class="status-pill" id="statusPill">Idle</span>
+        <div>
+          <strong>Serve from repo root</strong><br>
+          <code>python -m http.server 8765</code>
+        </div>
+        <div>
+          The harness loads <code>/ATARIXL.ROM</code> and <code>/ATARIBAS.ROM</code>
+          from the repository root and opens
+          <code>/third_party/A8E/jsA8E/index.html</code> in the embedded frame.
+        </div>
+        <div>
+          Phase 4 remains a diagnostic approximation in jsA8E: it boots the smoketest
+          XEX first, then swaps <code>phase4_disk_test.atr</code> into D1 at the
+          <code>$0501</code> entry breakpoint.
+        </div>
+      </section>
+
+      <section class="panel">
+        <pre id="logOutput" class="log">No run yet.</pre>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <section class="panel frame-panel">
+        <div class="panel-head">
+          <h2>Emulator</h2>
+          <span class="status-pill">jsA8E</span>
+        </div>
+        <iframe
+          id="emulatorFrame"
+          title="jsA8E"
+          src="../third_party/A8E/jsA8E/index.html">
+        </iframe>
+      </section>
+
+      <section class="results">
+        <section class="panel artifacts-panel">
+          <div class="panel-head">
+            <h2>Artifacts</h2>
+            <span id="resultBadge" class="status-pill">Waiting</span>
+          </div>
+          <div id="resultSummary" class="summary">
+            <div>No run data yet.</div>
+          </div>
+          <div id="screenshotGallery" class="gallery"></div>
+        </section>
+
+        <section class="panel json-panel">
+          <div class="json-head">
+            <h2>Artifact JSON</h2>
+            <a id="downloadJsonLink" href="#" download="jsa8e_artifacts.json" hidden>
+              Download JSON
+            </a>
+          </div>
+          <pre id="artifactJson" class="json">No run data yet.</pre>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="jsa8e_automation_smoketest.js"></script>
+</body>
+</html>

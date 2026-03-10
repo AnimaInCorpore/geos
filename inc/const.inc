@@ -55,12 +55,24 @@ CMND_FILE_NUM           =       15
 MAX_CMND_STR            =       32
 DIR_1581_TRACK          =       40
 DIR_ACC_CHAN            =       13
+.ifdef atarixl
+DIR_TRACK               =       18
+N_TRACKS                =       20
+.else
 DIR_TRACK               =       18
 N_TRACKS                =       35
+.endif
 DK_NM_ID_LEN            =       18
 TRACK                   =       9
 SECTOR                  =       12
+.ifdef atarixl
+TOTAL_BLOCKS            =       360
+.else
 TOTAL_BLOCKS            =       664
+.endif
+GEOS_BLOCK_DATA_SIZE    =       $fe     ; 254-byte payload in each GEOS logical block
+GEOS_BLOCK_DATA_LAST    =       $fe     ; last payload byte offset after the T/S link
+VLIR_REC_LAST           =       $fe     ; last VLIR track slot in a 256-byte chain table
 
 ; colours
 BLACK                   =       0

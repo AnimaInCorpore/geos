@@ -28,33 +28,55 @@
 .global _SetGDirEntry
 .global _SaveFile
 
+.ifdef atarixl_disk_smoketest
+PHASE4_STATUS = $04ec
+.endif
+
 .segment "files8"
 
 _SaveFile:
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $70
+.endif
 	ldy #0
 @1:	lda (r9),y
 	sta fileHeader,y
 	iny
 	bne @1
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $71
+.endif
 	jsr GetDirHead
 .ifdef wheels
 	bne @2
 .else
 	bnex @2
 .endif
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $72
+	.endif
 	jsr GetDAccLength
 	jsr SetBufTSVector
 	jsr BlkAlloc
 	bnex @2
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $73
+	.endif
 	jsr SetBufTSVector
 	jsr SetGDirEntry
 	bnex @2
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $74
+	.endif
 	jsr PutDirHead
 .ifdef wheels
 	bne @2
 .else
 	bnex @2
 .endif
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $75
+	.endif
 	sta fileHeader+O_GHINFO_TXT
 .ifdef wheels
 	MoveW_ dirEntryBuf+OFF_GHDR_PTR, r1
@@ -68,10 +90,22 @@ _SaveFile:
 .else
 	bnex @2
 .endif
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $76
+	.endif
 	jsr ClearNWrite
 	bnex @2
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $77
+	.endif
 	jsr GetStartHAddr
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $78
+	.endif
 	jsr WriteFile
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $7f
+	.endif
 @2:	rts
 
 GetDAccLength:
@@ -81,7 +115,7 @@ GetDAccLength:
 	CmpBI fileHeader+O_GHSTR_TYPE, VLIR
 	bne @2
 @1:	clc
-	lda #$fe
+	lda #GEOS_BLOCK_DATA_SIZE
 	adc r2L
 	sta r2L
 	bcc @2
@@ -97,7 +131,7 @@ GetDAccLength:
 	jsr @1
 	CmpBI fileHeader+O_GHSTR_TYPE, VLIR
 	bne @2
-@1:	AddVW $fe, r2
+@1:	AddVW GEOS_BLOCK_DATA_SIZE, r2
 @2:	rts
 .endif
 

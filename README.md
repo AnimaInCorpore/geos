@@ -91,6 +91,21 @@ Run `make` to build the original "BSW" GEOS for C64. This will create the follow
 * compressed KERNAL image (`RUN`): `kernal_compressed.prg`
 * disk image: `geos.d64`
 
+Run `make VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari` to build the Atari XL
+port artifacts. This now creates an Atari ATR image at `build/atarixl/geos.atr`
+using `tools/atari_geos_disk.py`.
+
+The Atari disk builder formats a 720-sector ATR with a 20x18 logical GEOS block
+map (360 logical 256-byte blocks) that matches the current `drv1050` geometry.
+By default the ATR is blank but GEOS-formatted. You can add sequential GEOS
+`Convert v2.5` files (`.cvt`) at build time, for example:
+
+    make VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari \
+        ATARIXL_CVT_FILES="C:/path/to/hello1.cvt"
+
+Current limitation: the Atari converter is verified for sequential `.cvt` inputs.
+VLIR `.cvt` files are rejected explicitly and still need a dedicated conversion pass.
+
 If you have the [cbmfiles.com](http://www.cbmfiles.com/) `GEOS64.D64` image in the current directory, the disk image will be based on that one, with the `GEOS` and `GEOBOOT` files deleted and the newly built kernel added. Otherwise, it will be a new disk image with the kernel, and, if you have a `desktop.cvt` file in the current directory, with `DESK TOP` added.
 
 ## Variants
@@ -112,31 +127,63 @@ All output will be put into `build/<variant>`.
 
 ## Atari XL Smoke Testing (jsA8E)
 
-For quick Atari XL bring-up smoke checks, use the bundled browser emulator in the
-A8E submodule:
+jsA8E now exposes a stable browser automation surface at
+`window.A8EAutomation`. For Atari XL bring-up, that makes it useful not only as a
+manual smoke emulator, but also as a repeatable browser-side artifact capture path
+for the Phase 2-4 smoke binaries.
+
+For a direct Chrome/CDP quick-start, per-scenario recipes, and the current
+jsA8E-specific failure modes, see `JSA8E_AUTOMATION.md`.
+
+Run from repository root:
+
+    python -m http.server 8765
+
+Then open either:
+
+* Automated harness: `http://127.0.0.1:8765/tools/jsa8e_automation_smoketest.html`
+* Manual UI: `http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html`
+
+The automated harness drives the bundled emulator through the public API and maps
+directly to the current Atari bring-up artifacts:
+
+* Phase 2 display: build `make atarixl-smoketest`, then run the `Phase 2 display`
+  scenario to boot `build/atarixl/phase2_smoketest.xex`, wait for the static screen
+  to settle, and capture a screenshot plus a small bitmap/guard-gap dump.
+* Phase 3 input: build `make atarixl-input-smoketest`, then run the `Phase 3 input`
+  scenario to boot `build/atarixl/phase3_input_smoketest.xex`, inject joystick and
+  keyboard events through `A8EAutomation.input.*`, and capture before/after
+  screenshots.
+* Phase 4 disk diagnostics: build `make atarixl-disk-smoketest`, then run the
+  `Phase 4 disk` scenario to boot `build/atarixl/phase4_disk_smoketest.xex`,
+  swap `build/atarixl/phase4_disk_test.atr` into `D1:` at the `$0501` entry
+  breakpoint, and collect screenshot, trace, and `PHASE4_*` marker bytes.
+
+Use the harness for quick browser-side iteration and artifact capture. Keep Altirra
+as the sign-off emulator for step completion and for any disk-path result that must
+match the intended `D1:` boot configuration exactly, because the jsA8E Phase 4 flow
+still approximates the final setup by swapping `D1:` after the XEX reaches `$0501`.
+
+Manual jsA8E fallback:
 
 * UI path: `third_party/A8E/jsA8E/index.html`
-* Run from repository root:
-
-    python3 -m http.server 8765
-
-  then open:
-
-    http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html
-
 * Load ROMs via the jsA8E UI file inputs:
   * `ATARIXL.ROM` (16 KB)
   * `ATARIBAS.ROM` (8 KB)
 
 jsA8E auto-loads ROMs from `../ATARIXL.ROM` and `../ATARIBAS.ROM` relative to its
-page. With the URL above, that means:
+page. With the manual UI URL above, that means
 `third_party/A8E/ATARIXL.ROM` and `third_party/A8E/ATARIBAS.ROM`.
 
-Use jsA8E as a fast smoke-test path only. Keep Altirra as the sign-off emulator
-for Atari porting step completion.
-
 For Altirra setup and local placement in `third_party/`, see:
-`third_party/Altirra/README.md`.
+`third_party/README.md`.
+
+For the Windows PowerShell 7 Atari Phase 4 disk smoketest, use a dedicated
+`portablealt` INI such as `build/atarixl/phase4_test.ini` and set
+`"Simulator: Error mode" = 2` under
+`[User\Software\virtualdub.org\Altirra\Settings]`. That changes Altirra from a
+modal program-error dialog to a paused failure state, which keeps the Phase 4
+stage/error overlay visible for diagnosis.
 
 ## Drivers
 

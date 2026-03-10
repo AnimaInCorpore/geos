@@ -74,7 +74,7 @@ DoWriteFile:
 	iny
 	lda (r6),y
 	sta (r4),y
-	ldy #$fe
+	ldy #GEOS_BLOCK_DATA_LAST
 .ifdef bsw128
 	LoadB config, CRAM64K
 .else
@@ -105,7 +105,7 @@ DoWriteFile:
 	jsr WriteBlock
 	bnex @3
 	clc
-	lda #$FE
+	lda #GEOS_BLOCK_DATA_SIZE
 	adc r7L
 	sta r7L
 	bcc DoWriteFile
@@ -114,7 +114,7 @@ DoWriteFile:
 .else
 	jsr FlaggedPutBlock
 	bnex @3
-	AddVW $fe, r7
+	AddVW GEOS_BLOCK_DATA_SIZE, r7
 	bra DoWriteFile
 .endif
 @2:	tax
@@ -222,4 +222,3 @@ L5086:	PushW r9
 .endif
 
 ASSERT_NOT_BELOW_IO
-

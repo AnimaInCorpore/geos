@@ -22,21 +22,21 @@ Update rule: after each completed porting step, change exactly one matching chec
 
 - [x] 6. Write `kernal/start/start_atari.s` (ANTIC display list, GTIA color init)
 - [x] 7. Write `kernal/hw/hw_atari.s`
-- [ ] 8. Boot in Altirra emulator with OS ROM active; verify bitmap appears on screen
-- [ ] 9. Run graphics routines (`HorizontalLine`, `Rectangle`); confirm correct output
+- [x] 8. Boot in Altirra emulator with OS ROM active; verify bitmap appears on screen
+- [x] 9. Run graphics routines (`HorizontalLine`, `Rectangle`); confirm correct output
 
 ## Phase 3: Bring up input (OS-assisted mode)
 
 - [x] 10. Write `input/joydrv_atari.s`
 - [x] 11. Write `kernal/irq/irq_atari.s` Mode A (VBI via VVBLKD/SETVBV)
 - [x] 12. Write `kernal/keyboard/keyboard_atari.s` with POKEY scancode table
-- [ ] 13. Test: joystick moves cursor, keyboard events reach GEOS event loop
+- [x] 13. Test: joystick moves cursor, keyboard events reach GEOS event loop
 
 ## Phase 4: Bring up disk (OS-assisted mode, SIOV active)
 
-- [ ] 14. Write `drv/drv1050.s` using OS `jsr SIOV`
-- [ ] 15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool
-- [ ] 16. Audit and fix all `$FE`/`#254` sector-payload literals in `kernal/files/` (see section 6.7 in `PORTING.md`)
+- [x] 14. Write `drv/drv1050.s` using OS `jsr SIOV`
+- [x] 15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool
+- [x] 16. Audit and fix all `$FE`/`#254` sector-payload literals in `kernal/files/` (see section 6.7 in `PORTING.md`)
 - [ ] 17. Test: directory listing, file read, file write, disk full detection
 
 ## Phase 5: Cartridge boot and ROM-off
@@ -60,9 +60,21 @@ Update rule: after each completed porting step, change exactly one matching chec
 - 2026-03-05: Updated `Makefile` so `VARIANT=atarixl` builds `kernal/start/start_atari.s` (and no longer links `start64.s` for Atari). `make clean && make -j4 atarixl` now links without the `start_atari` missing-segment warning.
 - 2026-03-05: Completed step 7 by adding `kernal/hw/hw_atari.s` with Atari display init (`DLIST*`, `DMACTL`, GTIA palette), baseline P/M setup (`PMBASE`, `GRACTL`, player colors/sizes), and a 200-entry scanline LUT across the LMS split (`y=101` to `y=102`). The LUT is linked via a dedicated `hw_atari_lut` segment in `KERNAL_HI` to avoid `KERNAL_LO` overflow.
 - 2026-03-06: Step 8 validation attempt: rebuilt with `make clean && make -j4 atarixl` and regenerated `build/atarixl/geos.d64`; Altirra source tree is now present at `third_party/Altirra-4.40-src`, but the upstream build path is Windows-only (`src/BUILD-HOWTO.html` requires Windows 10+ and Visual Studio 2022 v143/Windows SDK, and `release.py` expects Windows tools like `where`/`devenv.com`). Step 8 remains unchecked pending on-screen bitmap verification in Altirra (PAL 800XL profile, OS ROM enabled).
+- 2026-03-06: Completed step 8 by adding a dedicated `atarixl-smoketest` build path that keeps the Phase 2 bring-up loop entirely in low RAM while OS ROM stays enabled, builds `build/atarixl/phase2_smoketest.xex` from the linked Atari memory map, and boots it in Altirra with `/baseline /hardware:800xl /memsize:64K /pal /run`. Captured `build/atarixl/phase2_smoketest_window_pal64k.png`, which shows the bitmap field on screen under Altirra `XL ATOS PAL / 64K`. Remaining vertical purple artifacts are left for later graphics/runtime cleanup; step 9 stays open.
+- 2026-03-06: Completed step 9 by replacing the C64 tiled scanline path used by `HorizontalLine`/`Rectangle` with Atari-linear row-base lookups (`AtariRowBase*` / `AtariBackRowBase*`) and byte-wise horizontal stepping in `kernal/graph/line.s` + `kernal/graph/scanline.s`. Added a dedicated low-RAM smoke linker config (`kernal/kernal_atarixl_smoketest.cfg`) so the OS-assisted XEX can execute those graphics routines while OS ROM remains enabled, then rebuilt `build/atarixl/phase2_smoketest.xex` and captured `build/atarixl/phase2_smoketest_step9_window.png` in Altirra (`PAL 800XL`, `64K`). The top rectangle, LMS-boundary patterned strip (`y=96..110`), and horizontal lines (`y=101`, `y=102`, `y=150`) render without wrap artifacts across the `y=101 -> 102` split.
 
 ### Phase 3 Notes
 
 - 2026-03-05: Completed step 10 by replacing the `input/joydrv_atari.s` placeholder with a full Atari-specific driver derived from `joydrv.s`. `ReadInput` now samples joystick 0 direction from `PORTA` (active-low) and fire from `TRIG0` (active-low), then feeds the existing GEOS acceleration/vector pipeline. Verified with `make -j4 atarixl`.
 - 2026-03-06: Completed step 11 by adding `kernal/irq/irq_atari.s` with Mode-A OS deferred VBI installation (`SETVBV` code 6) and a shared IRQ/VBI core that preserves GEOS zero-page workspace, runs `_DoKeyboardScan`, and dispatches `intTopVector`/`intBotVector` before returning via `XITVBV`. Updated `Makefile` so `VARIANT=atarixl` links `irq_atari.s` instead of C64 `irq.s`, and `start_atari.s` now installs the deferred VBI hook during reset. Verified with `make clean && make -j4 atarixl` (remaining expected warning: missing `keyboard_atari` segment until step 12).
 - 2026-03-06: Completed step 12 by adding `kernal/keyboard/keyboard_atari.s` with a 64-entry POKEY `KBCODE` translation table (base + shifted), queue-compatible `_DoKeyboardScan`/`_GetNextChar` logic, and OS-assisted repeat timing via `KEYREP`. Updated `Makefile`/`kernal_atarixl.cfg` so `VARIANT=atarixl` now links `keyboard_atari.s` instead of C64 `keyboard1/2/3.s`. Verified with `make clean && make -j4 atarixl`.
+- 2026-03-06: Completed step 13 by rebuilding `build/atarixl/phase3_input_smoketest.xex` with the low-RAM Atari input harness and verifying the repo's captured baseline/joystick/keyboard evidence set (`phase3_input_stable_base.png`, `phase3_input_stable_joy.png`, `phase3_input_stable_key.png`, plus the earlier `phase3_input_auto*.png` and `phase3_input_hw*.png` runs). The harness in `kernal/start/start_atari.s` routes joystick motion through `UpdateMouse` + `inputVector` and keyboard events through `_DoKeyboardScan` + `keyVector` via `_DoCheckButtons`, and the screenshots confirm cursor movement plus key-lamp/key-bit updates on screen.
+
+### Phase 4 Notes
+
+- 2026-03-06: Completed step 14 by replacing the `drv/drv1050.s` phase-1 include placeholder with an Atari SIO implementation that fills the OS page-3 DCB and calls `SIOV` (`$E459`) for sector transfers. The driver now keeps the GEOS jump-table shape at `$9000`, maps each GEOS 256-byte block transfer to two 128-byte physical sector operations, and adds Atari-specific error mapping (`DSTATS` -> GEOS error codes).
+- 2026-03-06: Completed step 15 by adding `tools/atari_geos_disk.py`, a custom Atari ATR builder that formats a GEOS disk with Atari geometry (20 logical tracks x 18 sectors = 360 GEOS logical blocks over 720 Atari 128-byte sectors), updates the Atari constants/`drv1050` geometry to match that layout, and wires `VARIANT=atarixl` builds to emit `build/atarixl/geos.atr` instead of a Commodore `d64`. Direct validation in the current Windows environment succeeded for `build/atarixl/geos.atr`, `build/atarixl/blank_geos.atr`, and a populated sample image `build/atarixl/hello1_geos.atr` converted from `third_party/samples/geos/hello1.cvt`; the converter currently accepts sequential `.cvt` inputs and rejects VLIR `.cvt` inputs explicitly.
+- 2026-03-06: Completed step 16 by auditing every remaining `$FE` literal under `kernal/files/` and replacing the logical-block payload cases with named constants in `inc/const.inc` (`GEOS_BLOCK_DATA_SIZE`, `GEOS_BLOCK_DATA_LAST`). The VLIR table tail references in `files10.s` were separated as `VLIR_REC_LAST`, so the Atari port keeps GEOS's 254-byte logical payload semantics explicit while the 1050 driver continues to hide the 128-byte physical sector split.
+- 2026-03-06: Follow-up build verification now works in the current Windows/MSYS setup: `make VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari build/atarixl/kernal_combined.prg` and the Phase 3 smoke target both rebuild successfully after the Phase 4 driver and file-system changes.
+- 2026-03-06: Altirra Phase 4 retries require an isolated `portablealt` INI (`build/atarixl/phase4_test.ini`) plus `"Simulator: Error mode" = 2` under `[User\Software\virtualdub.org\Altirra\Settings]` to suppress the modal emulator-error dialog and leave the failure state paused on screen. With that setting, launching `phase4_disk_smoketest.xex` against `phase4_disk_test.atr` under `800XL`/`64K`/`PAL`/`1050` produces a stable window title and makes the new stage/error overlay in `start_atari.s` inspectable.
+- 2026-03-06: Phase 4 step 17 remains open. Current smoke build state is `build/atarixl/phase4_disk_smoketest.xex`, with the high kernal staged at `$2000-$5FFF` and copied under ROM before GEOS disk calls. `OpenDisk` now reaches `drv1050.__GetDirHead`; the latest stopped Altirra state was `CPU: Illegal instruction hit: 01FA` with `db($04EB)=1`, `db($04EC)=61`, `db($04ED)=0`, `db($04EE)=0`, `db($04EF)=0`, which means `__GetDirHead` entered and failed on the `EnterTurbo` call boundary before `ReadBlock`. Additional smoke markers currently in tree: `OpenDisk` jump-table=`$F1`, `GetDirHead` jump-table=`$22`, `drv1050.__GetDirHead`=`$60..$65`, `EnterTurbo` jump-table=`$23`, `drv1050.__EnterTurbo`=`$24/$25`, `SaveFile` harness/jump-table/internal=`$79/$7A/$70..$7F`.

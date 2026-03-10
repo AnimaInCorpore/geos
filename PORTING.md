@@ -1276,11 +1276,15 @@ Phase 2 gate before considering step 9 done:
 - Validate drawing across the LMS jump boundary (`y=101` to `y=102`) to ensure no wrap artifacts.
 
 Optional jsA8E smoke path (pre-check only, not sign-off):
-- UI path: `third_party/A8E/jsA8E/index.html`
-- Run from repo root: `python3 -m http.server 8765`, then open `http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html`
-- Load `ATARIXL.ROM` + `ATARIBAS.ROM` via the jsA8E file inputs (or place them at `third_party/A8E/` for auto-load).
-- Use this to quickly smoke-test bring-up visuals before Altirra runs.
-- Step completion for phases that call out Altirra (for example 8, 9, 20) still requires Altirra validation.
+- Serve from repo root with `python -m http.server 8765`.
+- Preferred path: open `http://127.0.0.1:8765/tools/jsa8e_automation_smoketest.html` and drive the current smoke XEXs through `window.A8EAutomation`.
+- Manual fallback: open `http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html` and load `ATARIXL.ROM` + `ATARIBAS.ROM` via the file inputs (or place them at `third_party/A8E/` for auto-load).
+- Recommended jsA8E automation mapping:
+  - Phase 2 / step 8 pre-check: `make atarixl-smoketest`, then run the `Phase 2 display` scenario to boot `build/atarixl/phase2_smoketest.xex` and capture a framebuffer screenshot.
+  - Phase 3 / step 13 pre-check: `make atarixl-input-smoketest`, then run the `Phase 3 input` scenario to inject joystick + keyboard events and capture before/after screenshots.
+  - Phase 4 diagnostic pre-check: `make atarixl-disk-smoketest`, then run the `Phase 4 disk` scenario to boot `build/atarixl/phase4_disk_smoketest.xex`, swap `build/atarixl/phase4_disk_test.atr` into `D1:` at `$0501`, and collect screenshot + trace + `$04E7-$04F5` smoke markers.
+- Treat the jsA8E Phase 4 flow as diagnostic only, because it approximates the final setup by swapping `D1:` after the XEX boot loader reaches `$0501`.
+- Step completion for phases that call out Altirra (for example 8, 9, 20) still requires Altirra validation, and Phase 4 conclusions from jsA8E should be re-checked in Altirra before sign-off.
 
 ### Phase 3: Bring up input (OS-assisted mode)
 10. Write `input/joydrv_atari.s`
@@ -1294,14 +1298,22 @@ Optional jsA8E smoke path (pre-check only, not sign-off):
 16. Audit and fix all `$FE`/`#254` sector-payload literals in `kernal/files/` (see §6.7)
 17. Test: directory listing, file read, file write, disk full detection
 
+Phase 4 gate before considering step 17 done:
+- Make `EnterTurbo`/`ExitTurbo`/`PurgeTurbo` Atari-safe first. Baseline Atari 1050 bring-up can treat them as compatibility no-ops (or a tiny state-only shim) until a real acceleration path exists.
+- Use `build/atarixl/phase4_disk_smoketest.xex` with `build/atarixl/phase4_test.ini` in Altirra (`800XL`, `64K`, `PAL`, `1050`) and set `"Simulator: Error mode" = 2` so CPU traps stay inspectable instead of hiding behind a modal dialog.
+- Optional browser-side diagnostic: `tools/jsa8e_automation_smoketest.html` can capture screenshot, trace tail, and the `$04E7-$04F5` `PHASE4_*` marker block after swapping `build/atarixl/phase4_disk_test.atr` into `D1:` at the smoke XEX entry breakpoint (`$0501`); use this for quick iteration only, not as the final sign-off path.
+- Require the smoke path to advance past `OpenDisk -> GetDirHead -> EnterTurbo -> ReadBlock`; current known stop is an illegal instruction at `$01FA` reached from `drv1050.__GetDirHead` before `ReadBlock`.
+- Only sign off step 17 after directory listing, sequential file read/write, and disk-full detection all pass on Atari `.atr` images such as `build/atarixl/geos.atr` and `build/atarixl/blank_geos.atr`.
+
 ### Phase 5: Cartridge boot and ROM-off
-18. Write OS ROM disable stub in `start_atari.s`; test RAM at $C000 after disable
+18. Write OS ROM disable stub in `start_atari.s`; test RAM at $C000 after disable using the existing low-RAM staging/copy-under-ROM path
 19. Switch VBI handler to Mode B (direct NMI at $FFFA)
 20. Create 8 KB cartridge ROM image for $A000–$BFFF; test cold-boot in Altirra **PAL XL** profile
 21. Verify GEOS desktop loads end-to-end from cartridge + floppy; then test on **PAL** hardware
 
-Phase 5 disk rule:
-- Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Do not block Phase 5 on raw POKEY SIO.
+Phase 5 prerequisites and disk rule:
+- Do not start ROM-disable/cartridge work until the Phase 4 smoke path reaches `ReadBlock` and `OpenDisk` succeeds end-to-end with OS ROM enabled.
+- Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Reuse the Phase 4 staging/copy-under-ROM path and do not block Phase 5 on raw POKEY SIO.
 
 ### Phase 6: Integration and polish
 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
