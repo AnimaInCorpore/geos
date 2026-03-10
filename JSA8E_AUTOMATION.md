@@ -36,8 +36,8 @@ built-in screenshot/artifact collection.
 
 Use the emulator page directly when you need scripted control from Chrome/CDP or
 when the harness is failing before it reaches the real emulator work. Direct
-automation avoids cross-frame data passing between the harness page and the
-embedded emulator frame.
+automation now has feature parity with the harness on media loading because
+jsA8E exposes URL-native `runXexFromUrl(...)` and `mountDiskFromUrl(...)`.
 
 ## Recommended Chrome Launch
 
@@ -75,12 +75,19 @@ When driving jsA8E directly:
 3. Load ROMs explicitly if they are not already present:
    * `/ATARIXL.ROM`
    * `/ATARIBAS.ROM`
-4. Fetch the XEX and ATR from the same page context that calls
-   `A8EAutomation`. Do not fetch bytes in an outer frame and pass them into the
-   emulator frame unless that path has been revalidated.
-5. Collect `debugState`, `traceTail`, and optional disassembly whenever a wait
-   times out. That usually gives a better diagnosis than only saving a
-   screenshot.
+4. Prefer `dev.runXexFromUrl("/build/atarixl/....xex")` and
+   `media.mountDiskFromUrl("/build/atarixl/....atr")` over manual fetch-plus-buffer
+   handoff.
+5. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
+   media issues. The progress phases now distinguish resource fetch, media
+   acceptance, loader installation, loader execution, entry-PC success, and
+   timeout/failure phases.
+6. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` as
+   structured failure bundles, not only as exceptions. They can already include
+   `debugState`, `traceTail`, disassembly, console-key state, mounted media,
+   and an optional screenshot.
+7. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
+   `debug.runUntilPcOrSnapshot(...)` before writing one-off harness code.
 
 ## Per-Scenario Recipes
 
@@ -98,7 +105,7 @@ Use:
 Flow:
 
 1. `setBreakpoints([0x0501])`
-2. `runXex(...)`
+2. `runXexFromUrl(...)`
 3. wait for `$0501`
 4. clear breakpoints
 5. `start()`
@@ -146,9 +153,9 @@ Use:
 Flow:
 
 1. `setBreakpoints([0x0501])`
-2. `runXex(...)`
+2. `runXexFromUrl(...)`
 3. wait for breakpoint at `$0501`
-4. `mountDisk(atr, { name: "phase4_disk_test.atr", slot: 0 })`
+4. `mountDiskFromUrl("/build/atarixl/phase4_disk_test.atr", { name: "phase4_disk_test.atr", slot: 0 })`
 5. clear breakpoints
 6. `start()`
 7. `waitForTime({ ms: 1500, clock: "real" })`
@@ -159,22 +166,21 @@ This remains diagnostic only. Altirra is still the sign-off path for Phase 4.
 
 ## Known Pitfalls
 
-### Harness cross-frame `runXex` failure
-
-Current harness runs can fail with:
-
-```text
-A8EAutomation.dev.runXex requires XEX bytes or a HostFS file
-```
-
-The practical workaround is to drive `third_party/A8E/jsA8E/index.html`
-directly and fetch the XEX/ATR in that same page context.
-
 ### Phase 4 current jsA8E state
 
-As of 2026-03-10, a direct jsA8E Phase 4 run starts the smoke XEX but does not
-reach the expected `$0501` entry breakpoint within 15 seconds. The machine
-settles in a loop around `$5059-$505E`:
+As of 2026-03-10, jsA8E has the newer automation surface upstream:
+
+* `runXexFromUrl(...)`
+* `mountDiskFromUrl(...)`
+* `captureFailureState(...)`
+* `runUntilPcOrSnapshot(...)`
+* progress events via `events.subscribe("progress", ...)`
+* structured timeout bundles from `waitForPc()` / `waitForBreakpoint()`
+
+That means the harness and the direct emulator page can both use the same
+URL-native media path. The remaining Phase 4 problem is no longer media
+transport. A Phase 4 jsA8E run still does not reach the expected `$0501` entry
+breakpoint within 15 seconds. The machine settles in a loop around `$5059-$505E`:
 
 ```text
 $5059  LDA $D01F
@@ -187,9 +193,22 @@ At that point:
 * `D1:` is still not mounted
 * no `PHASE4_*` markers are available yet
 * useful follow-up artifacts are:
+  * the structured failure bundle from `waitForBreakpoint(...)`
   * paused `debugState`
   * `traceTail`
   * disassembly around the current PC
+  * console-key state
+  * progress-event history from the failed run
+
+### Cache-busting reload
+
+When browser caching is suspicious, jsA8E now exposes:
+
+* `system.reload({ cacheBust: true })`
+
+Use that on the emulator page before reconnecting, or reload the harness page
+with a cache-busting query when you want both the host UI and the embedded frame
+to pick up fresh scripts.
 
 ## Suggested Next-Session Start
 
@@ -197,8 +216,10 @@ For the fastest restart next time:
 
 1. rebuild the needed smoke target
 2. start `python -m http.server 8765`
-3. decide whether the harness page is enough
-4. if the harness fails early, switch immediately to direct Chrome/CDP on the
-   emulator page
+3. try the harness page first; it now uses `runXexFromUrl(...)`,
+   `mountDiskFromUrl(...)`, progress events, and structured timeout artifacts
+4. if Phase 4 still misses `$0501`, keep the emitted progress log and failure
+   bundle before retrying in direct Chrome/CDP
 5. for Phase 4, treat a missed `$0501` breakpoint as a real diagnostic result
-   and capture `debugState`, `traceTail`, and disassembly before changing code
+   and keep `debugState`, `traceTail`, disassembly, console-key state, and the
+   inferred failure phase before changing code

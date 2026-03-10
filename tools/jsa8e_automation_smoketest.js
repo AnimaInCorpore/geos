@@ -50,6 +50,7 @@
     busy: false,
     artifactUrl: "",
     objectUrls: [],
+    progressEvents: [],
   };
 
   const els = {};
@@ -133,7 +134,10 @@
     const scenario = getSelectedScenario();
     if (!scenario) throw new Error("No jsA8E scenario is selected");
 
+    let api = null;
+    let progressSubscription = 0;
     state.busy = true;
+    state.progressEvents = [];
     setStatus("Running");
     els.resultBadge.textContent = "Running";
     els.runButton.disabled = true;
@@ -142,7 +146,8 @@
     logLine("Starting " + scenario.label);
 
     try {
-      const api = await getAutomationApi();
+      api = await getAutomationApi();
+      progressSubscription = subscribeToProgress(api);
       const capabilities = await api.getCapabilities();
       logLine("Capabilities: " + JSON.stringify(capabilities));
       await ensureRoms(api);
@@ -153,6 +158,14 @@
       setStatus("Complete");
       els.resultBadge.textContent = result.badge || "Complete";
     } finally {
+      if (
+        api &&
+        api.events &&
+        typeof api.events.unsubscribe === "function" &&
+        progressSubscription
+      ) {
+        api.events.unsubscribe(progressSubscription);
+      }
       state.busy = false;
       els.runButton.disabled = false;
       els.scenarioSelect.disabled = false;
@@ -200,7 +213,14 @@
   }
 
   async function runPhase2Display(api, scenario) {
-    await bootXexToEntry(api, scenario.xexPath);
+    const entryEvent = await bootXexToEntry(api, scenario.xexPath);
+    if (isFailureArtifact(entryEvent)) {
+      return buildBootFailureResult(
+        scenario,
+        entryEvent,
+        "The display smoke binary did not reach its expected entry breakpoint.",
+      );
+    }
     await api.debug.setBreakpoints([]);
     await api.system.start();
     const waitResult = await api.system.waitForTime({ ms: 900, clock: "real" });
@@ -225,7 +245,14 @@
   }
 
   async function runPhase3Input(api, scenario) {
-    await bootXexToEntry(api, scenario.xexPath);
+    const entryEvent = await bootXexToEntry(api, scenario.xexPath);
+    if (isFailureArtifact(entryEvent)) {
+      return buildBootFailureResult(
+        scenario,
+        entryEvent,
+        "The input smoke binary did not reach its expected entry breakpoint.",
+      );
+    }
     await api.debug.setBreakpoints([]);
     await api.system.start();
     await api.system.waitForTime({ ms: 450, clock: "real" });
@@ -264,11 +291,25 @@
 
   async function runPhase4Disk(api, scenario) {
     const entryEvent = await bootXexToEntry(api, scenario.xexPath);
+    if (isFailureArtifact(entryEvent)) {
+      return buildBootFailureResult(
+        scenario,
+        entryEvent,
+        "The Phase 4 XEX still failed before the harness could swap D1 to the test ATR.",
+      );
+    }
     logLine("Swapping D1 to " + scenario.diskPath + " at $" + hex(entryEvent.debugState.pc, 4));
-    await api.media.mountDisk(await fetchArrayBuffer(scenario.diskPath), {
+    const mountResult = await api.media.mountDiskFromUrl(scenario.diskPath, {
       name: fileNameFromPath(scenario.diskPath),
       slot: 0,
     });
+    logLine(
+      "Mounted D1 from " +
+        (mountResult.sourceUrl || scenario.diskPath) +
+        " (" +
+        (mountResult.byteLength | 0) +
+        " bytes)",
+    );
     await api.debug.setBreakpoints([]);
     await api.system.start();
 
@@ -307,17 +348,23 @@
   }
 
   async function bootXexToEntry(api, xexPath) {
-    const xexBuffer = await fetchArrayBuffer(xexPath);
     await api.debug.setBreakpoints([ENTRY_PC]);
     logLine("Booting " + xexPath + " to entry breakpoint $" + hex(ENTRY_PC, 4));
-    await api.dev.runXex({
-      buffer: xexBuffer,
+    await api.dev.runXexFromUrl(xexPath, {
       name: fileNameFromPath(xexPath),
     });
     const stop = await api.debug.waitForBreakpoint({
       timeoutMs: DEFAULT_TIMEOUT_MS,
       immediate: false,
+      screenshot: true,
+      traceTailLimit: 32,
+      beforeInstructions: 8,
+      afterInstructions: 8,
     });
+    if (isFailureArtifact(stop)) {
+      logLine("Entry wait failed: " + describeFailure(stop));
+      return stop;
+    }
     if (!stop || !stop.debugState) {
       throw new Error("The smoke XEX did not reach the expected entry breakpoint");
     }
@@ -354,6 +401,7 @@
       scenario: scenario.id,
       scenarioLabel: scenario.label,
       timestamp: new Date().toISOString(),
+      progressEvents: state.progressEvents.slice(),
       systemState: systemState,
       phase4Markers: result.phase4Markers || null,
       artifacts: result.artifacts,
@@ -373,6 +421,28 @@
     lines.push(renderSummaryLine("Renderer", systemState.rendererBackend || "unknown"));
     lines.push(renderSummaryLine("Run state", debugState ? formatState(debugState) : "n/a"));
     lines.push(renderSummaryLine("Mounted media", formatMountedMedia(systemState)));
+    if (result.artifacts && result.artifacts.failure) {
+      lines.push(
+        renderSummaryLine(
+          "Failure phase",
+          result.artifacts.phase || result.artifacts.failure.phase || "n/a",
+        ),
+      );
+      lines.push(
+        renderSummaryLine(
+          "Failure reason",
+          result.artifacts.failure.reason || "n/a",
+        ),
+      );
+    }
+    if (result.artifacts && result.artifacts.consoleKeys) {
+      lines.push(
+        renderSummaryLine(
+          "Console keys",
+          formatConsoleKeys(result.artifacts.consoleKeys),
+        ),
+      );
+    }
 
     const summary = Array.isArray(result.summary) ? result.summary : [];
     for (let i = 0; i < summary.length; i++) {
@@ -469,6 +539,17 @@
     els.downloadJsonLink.removeAttribute("href");
   }
 
+  function subscribeToProgress(api) {
+    if (!api || !api.events || typeof api.events.subscribe !== "function") {
+      return 0;
+    }
+    return api.events.subscribe("progress", function (event) {
+      const entry = sanitizeProgressEvent(event);
+      state.progressEvents.push(entry);
+      logLine("Progress: " + formatProgressEvent(entry));
+    });
+  }
+
   function updateJsonDownload(text, name) {
     if (state.artifactUrl) {
       URL.revokeObjectURL(state.artifactUrl);
@@ -508,6 +589,21 @@
     return lines;
   }
 
+  function buildBootFailureResult(scenario, failure, note) {
+    const screenshot = screenshotFromArtifactBundle(failure, scenario.id + "-failure");
+    return {
+      badge: failure.phase === "waiting_for_console_input" ? "Console Wait" : "Timeout",
+      summary: [
+        "Boot attempt for " + scenario.xexPath + " did not reach $" + hex(ENTRY_PC, 4) + ".",
+        describeFailure(failure),
+        note,
+      ],
+      screenshots: screenshot ? [screenshot] : [],
+      artifacts: failure,
+      phase4Markers: decodePhase4Markers(failure),
+    };
+  }
+
   function decodePhase4Markers(artifacts) {
     if (!artifacts || !Array.isArray(artifacts.memoryRanges)) return null;
     for (let i = 0; i < artifacts.memoryRanges.length; i++) {
@@ -540,10 +636,22 @@
     const slots = [];
     for (let i = 0; i < systemState.media.deviceSlots.length; i++) {
       const slot = systemState.media.deviceSlots[i];
-      if (!slot) continue;
+      if (!slot || !slot.mounted) continue;
       slots.push("D" + (i + 1) + "=" + (slot.name || "mounted"));
     }
     return slots.length ? slots.join(", ") : "none";
+  }
+
+  function formatConsoleKeys(consoleKeys) {
+    if (!consoleKeys) return "n/a";
+    return (
+      "option=" +
+      (!!consoleKeys.option) +
+      ", select=" +
+      (!!consoleKeys.select) +
+      ", start=" +
+      (!!consoleKeys.start)
+    );
   }
 
   function setStatus(text) {
@@ -572,6 +680,80 @@
     els.resultSummary.innerHTML =
       '<div><strong>Run failed:</strong> ' + escapeHtml(message) + "</div>";
     els.artifactJson.textContent = message;
+  }
+
+  function isFailureArtifact(result) {
+    return !!(result && result.ok === false && result.failure);
+  }
+
+  function describeFailure(failure) {
+    if (!failure) return "Automation failed.";
+    const parts = [];
+    if (failure.phase) parts.push("phase=" + failure.phase);
+    if (failure.failure && failure.failure.reason) {
+      parts.push("reason=" + failure.failure.reason);
+    } else if (failure.reason) {
+      parts.push("reason=" + failure.reason);
+    }
+    if (failure.failure && failure.failure.message) {
+      parts.push(failure.failure.message);
+    }
+    if (failure.debugState) {
+      parts.push("PC=$" + hex(failure.debugState.pc, 4));
+    }
+    return parts.join(", ") || "Automation failed.";
+  }
+
+  function screenshotFromArtifactBundle(bundle, label) {
+    if (
+      !bundle ||
+      !bundle.screenshot ||
+      bundle.screenshot.error ||
+      !bundle.screenshot.base64
+    ) {
+      return null;
+    }
+    const bytes = base64ToBytes(bundle.screenshot.base64);
+    const blob = new Blob([bytes], { type: bundle.screenshot.mimeType || "image/png" });
+    const url = URL.createObjectURL(blob);
+    state.objectUrls.push(url);
+    return {
+      label: label,
+      url: url,
+      downloadName: label + ".png",
+      width: bundle.screenshot.width | 0,
+      height: bundle.screenshot.height | 0,
+    };
+  }
+
+  function sanitizeProgressEvent(event) {
+    const out = {
+      timestamp: new Date().toISOString(),
+      operation: event && event.operation ? String(event.operation) : "automation",
+      phase: event && event.phase ? String(event.phase) : "progress",
+    };
+    if (event && event.url) out.url = String(event.url);
+    if (event && event.responseUrl) out.responseUrl = String(event.responseUrl);
+    if (event && typeof event.status === "number") out.status = event.status | 0;
+    if (event && event.reason) out.reason = String(event.reason);
+    if (event && event.message) out.message = String(event.message);
+    if (event && typeof event.targetPc === "number") out.targetPc = event.targetPc & 0xffff;
+    if (event && typeof event.pc === "number") out.pc = event.pc & 0xffff;
+    if (event && typeof event.byteLength === "number") out.byteLength = event.byteLength | 0;
+    if (event && typeof event.slot === "number") out.slot = event.slot | 0;
+    return out;
+  }
+
+  function formatProgressEvent(event) {
+    const parts = [event.operation + ":" + event.phase];
+    if (event.status !== undefined) parts.push("status=" + event.status);
+    if (event.targetPc !== undefined) parts.push("target=$" + hex(event.targetPc, 4));
+    if (event.pc !== undefined) parts.push("pc=$" + hex(event.pc, 4));
+    if (event.slot !== undefined) parts.push("slot=" + event.slot);
+    if (event.byteLength !== undefined) parts.push("bytes=" + event.byteLength);
+    if (event.reason) parts.push("reason=" + event.reason);
+    if (event.message) parts.push(event.message);
+    return parts.join(" ");
   }
 
   async function fetchArrayBuffer(path) {

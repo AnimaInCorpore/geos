@@ -335,7 +335,8 @@
         <p class="lede">
           Browser-side Atari XL smoke harness for the local GEOS port. It drives
           <code>window.A8EAutomation</code> directly and is intended for quick
-          iteration, screenshots, and failure artifacts before Altirra sign-off.
+          iteration, progress checkpoints, screenshots, and failure artifacts
+          before Altirra sign-off.
         </p>
       </section>
 
@@ -359,6 +360,12 @@
           The harness loads <code>/ATARIXL.ROM</code> and <code>/ATARIBAS.ROM</code>
           from the repository root and opens
           <code>/third_party/A8E/jsA8E/index.html</code> in the embedded frame.
+        </div>
+        <div>
+          Scenario runs now use jsA8E's URL-native media APIs:
+          <code>runXexFromUrl(...)</code> and <code>mountDiskFromUrl(...)</code>.
+          The log records the emitted progress phases and the JSON output preserves
+          structured timeout snapshots.
         </div>
         <div>
           Phase 4 remains a diagnostic approximation in jsA8E: it boots the smoketest

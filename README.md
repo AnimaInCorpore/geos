@@ -159,10 +159,26 @@ directly to the current Atari bring-up artifacts:
   swap `build/atarixl/phase4_disk_test.atr` into `D1:` at the `$0501` entry
   breakpoint, and collect screenshot, trace, and `PHASE4_*` marker bytes.
 
+The harness now uses jsA8E's URL-native automation entry points:
+
+* `dev.runXexFromUrl(...)`
+* `media.mountDiskFromUrl(...)`
+* `events.subscribe("progress", ...)`
+* structured timeout/failure bundles from `waitForBreakpoint(...)`
+
+That means the remaining jsA8E Phase 4 blocker is the real pre-entry `$0501`
+loader timeout described in `JSA8E_AUTOMATION.md`, not the older binary-transport
+failure path.
+
 Use the harness for quick browser-side iteration and artifact capture. Keep Altirra
 as the sign-off emulator for step completion and for any disk-path result that must
 match the intended `D1:` boot configuration exactly, because the jsA8E Phase 4 flow
 still approximates the final setup by swapping `D1:` after the XEX reaches `$0501`.
+
+When jsA8E times out, prefer keeping the emitted progress checkpoints and the
+returned failure artifact bundle instead of only saving a screenshot. The newer
+automation API already includes `debugState`, trace tail, disassembly, mounted
+media, console-key state, and optional screenshots in those bundles.
 
 Manual jsA8E fallback:
 
