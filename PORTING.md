@@ -1400,6 +1400,41 @@ and OS ROM disable is bit 0 = 0 (RAM). The polarities differ from what intuition
 might suggest; refer to the mask table in §2 and test on real hardware or Altirra
 with accurate XL hardware emulation enabled.
 
+### 9.1 Review Follow-Ups (2026-03-10)
+
+The following issues were confirmed or judged likely enough during a post-Phase-4
+review to keep explicitly on the porting backlog:
+
+- **Remaining framebuffer-address rewrites.** The Atari scanline LUT is in place, but
+  several routines still need a full linear-framebuffer audit beyond the completed
+  `HorizontalLine`/`Rectangle` path. Track at minimum: `point`, `_VerticalLine`,
+  `_InvertLine`, `_RecoverLine`, `ImprintLine`, `BitmapUp` / `BitmapClip`, and font
+  blitters under `kernal/fonts/`. Any `_GetScanLine` + masked-`x` byte-offset pattern
+  must be treated as suspect on Atari.
+- **SIO restore ordering in `drv1050.s`.** Restore `PBCTL` before `PORTB`, then restore
+  `NMIEN`, so the PORTB write executes with the correct port control state on XL
+  hardware.
+- **SIO retry policy.** Add retry handling for recoverable Atari SIO errors (at minimum
+  `$8A`, `$8B`, `$8C`) instead of failing immediately on the first error status.
+- **OS shadow-register rule.** In OS-assisted phases, document and follow shadow writes
+  for display-critical registers (`SDMCTL`, `SDLSTL/H`, `COLOR0-4`, `CHBAS`) instead of
+  assuming direct writes to `DMACTL`, `DLISTL/H`, color registers, or `CHBASE` will
+  persist across VBI.
+- **Disk-image tool scope.** `tools/atari_geos_disk.py` currently supports sequential
+  `.cvt` inputs only; VLIR `.cvt` support remains required for real GEOS desktop and
+  application workflows.
+- **Drive-unit handling.** `drv1050.s` still hardcodes `DUNIT = 1`; multi-drive support
+  must be revisited so the Atari DCB unit field follows `curDrive`.
+- **Driver cleanup.** Remove or justify leftover C64-era temporary symbols in
+  `drv1050.s` (`tmpclkreg`, `tmpPS`, `tmpgrirqen`, `tmpCPU_DATA`, `tmpmobenble`,
+  `tmpDD00`, `tmpDD00_2`) once Phase 4 is stable.
+- **Display polarity decision.** The current Atari palette initializes white-on-black.
+  Keep or change that intentionally, and verify the chosen foreground/background
+  polarity matches GEOS drawing assumptions.
+- **Document consistency.** Keep the LMS-boundary wording consistent with the actual
+  split used by the Atari display list and LUT: the critical transition is
+  `y = 101 -> 102`.
+
 ---
 
 ## 10. NTSC Follow-Up Scope
