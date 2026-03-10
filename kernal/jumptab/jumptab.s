@@ -589,7 +589,11 @@ CRC:
 LdFile:
 	jmp _LdFile
 EnterTurbo:
+.ifdef atarixl
+	jmp AtariEnterTurboShim
+.else
 	jmp (_EnterTurbo)
+.endif
 LdDeskAcc:
 	jmp _LdDeskAcc
 ReadBlock:
@@ -609,9 +613,17 @@ EnterDeskTop:
 StartAppl:
 	jmp _StartAppl
 ExitTurbo:
+.ifdef atarixl
+	jmp AtariExitTurboShim
+.else
 	jmp (_ExitTurbo)
+.endif
 PurgeTurbo:
+.ifdef atarixl
+	jmp AtariPurgeTurboShim
+.else
 	jmp (_PurgeTurbo)
+.endif
 DeleteFile:
 	jmp _DeleteFile
 FindFTypes:
@@ -738,6 +750,22 @@ VerifyRAM:
 	rts
 DoRAMOp:
 	ldx #DEV_NOT_FOUND
+	rts
+.endif
+
+.ifdef atarixl
+AtariEnterTurboShim:
+	; Atari 810/1050 bring-up has no turbo transport yet, so keep the
+	; public GEOS call surface intact and return success immediately.
+	ldx #0
+	rts
+
+AtariExitTurboShim:
+	ldx #0
+	rts
+
+AtariPurgeTurboShim:
+	ldx #0
 	rts
 .endif
 

@@ -162,7 +162,10 @@ Flow:
 8. `pause()`
 9. `collectArtifacts({ ranges: [{ label: "phase4_markers", start: 0x04e7, length: 0x0f }], traceTailLimit: 32 })`
 
-This remains diagnostic only. Altirra is still the sign-off path for Phase 4.
+For Phase 4, this remains a diagnostic and sign-off-prep flow. jsA8E is already a
+real automation surface here, but Altirra is still the sign-off path because the
+browser harness swaps `D1:` after the XEX reaches `$0501` instead of reproducing
+the final boot configuration exactly.
 
 ## Known Pitfalls
 

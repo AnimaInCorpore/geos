@@ -170,10 +170,11 @@ That means the remaining jsA8E Phase 4 blocker is the real pre-entry `$0501`
 loader timeout described in `JSA8E_AUTOMATION.md`, not the older binary-transport
 failure path.
 
-Use the harness for quick browser-side iteration and artifact capture. Keep Altirra
-as the sign-off emulator for step completion and for any disk-path result that must
-match the intended `D1:` boot configuration exactly, because the jsA8E Phase 4 flow
-still approximates the final setup by swapping `D1:` after the XEX reaches `$0501`.
+Use the harness as the primary browser-side automation, iteration, and artifact
+capture path. Keep Altirra as the sign-off emulator for step completion and for
+any disk-path result that must match the intended `D1:` boot configuration
+exactly, because the jsA8E Phase 4 flow still approximates the final setup by
+swapping `D1:` after the XEX reaches `$0501`.
 
 When jsA8E times out, prefer keeping the emitted progress checkpoints and the
 returned failure artifact bundle instead of only saving a screenshot. The newer

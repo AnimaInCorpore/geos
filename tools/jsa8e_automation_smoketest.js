@@ -19,7 +19,7 @@
       xexPath: "../build/atarixl/phase2_smoketest.xex",
       description:
         "Boot the low-RAM Phase 2 display harness, let the static bitmap settle, then capture a screenshot and a small framebuffer dump.",
-      caveat: "Browser pre-check only. Step sign-off still stays in Altirra.",
+      caveat: "Repeatable browser automation path. Step sign-off still stays in Altirra.",
       run: runPhase2Display,
     },
     phase3_input: {
@@ -29,7 +29,7 @@
       xexPath: "../build/atarixl/phase3_input_smoketest.xex",
       description:
         "Boot the input smoke harness, inject joystick and keyboard activity through the public automation API, and capture before/after screenshots.",
-      caveat: "Useful for repeatable smoke evidence, not for final input timing sign-off.",
+      caveat: "Repeatable browser automation and smoke evidence path, not final input timing sign-off.",
       run: runPhase3Input,
     },
     phase4_disk: {
@@ -41,7 +41,7 @@
       description:
         "Boot the Phase 4 XEX to its $0501 entry breakpoint, replace D1 with the writable ATR, then collect screenshot, trace, and PHASE4_* marker bytes.",
       caveat:
-        "Diagnostic only: jsA8E cannot boot the XEX and mount the test ATR in D1 simultaneously, so the harness swaps D1 after the boot loader reaches $0501.",
+        "Browser-side diagnostic/sign-off-prep path: jsA8E cannot boot the XEX and mount the test ATR in D1 simultaneously, so the harness swaps D1 after the boot loader reaches $0501.",
       run: runPhase4Disk,
     },
   };

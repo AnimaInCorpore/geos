@@ -117,6 +117,8 @@ __GetBlock:
 	lda $0103,x
 	sta PHASE4_DBG_STK2
 	lda EnterTurbo
+	cmp #$4c
+	beq @enterTurboVisible
 	cmp #$6c
 	beq @enterTurboVisible
 	LoadB PHASE4_STATUS, $e3
