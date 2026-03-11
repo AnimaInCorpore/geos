@@ -33,6 +33,8 @@
 .import i_FillRam
 .import InitAtariDisplay
 .import InitAtariIRQ
+.import _NMIHandler
+.import _IRQVectorHandler
 .import _HorizontalLine
 .import _Rectangle
 .import _SetPattern
@@ -267,12 +269,6 @@ InstallAtariSioBridge:
 	bpl @snapshotVectors
 	lda $0232 ; SSKCTL
 	sta SIO_BRIDGE_SAVED_SSKCTL
-	ldy #5
-@snapshotWorkspace:
-	lda $023a,y
-	sta SIO_BRIDGE_OS_WORKSPACE,y
-	dey
-	bpl @snapshotWorkspace
 	rts
 
 ; Runs from low RAM so the driver can bank OS ROM in for SIOV without
@@ -303,12 +299,6 @@ SioBridgeTemplate:
 	lda SIO_BRIDGE_SAVED_SSKCTL
 	sta $0232 ; SSKCTL
 	sta SKCTL
-	ldy #5
-@restoreWorkspace:
-	lda SIO_BRIDGE_OS_WORKSPACE,y
-	sta $023a,y
-	dey
-	bpl @restoreWorkspace
 	lda #$40
 	sta NMIEN
 	cli
@@ -402,6 +392,7 @@ Phase4SmokeRun:
 	and #$fe
 	sta PORTB
 	jsr Phase4InstallHighKernal
+	jsr Phase4InstallRamVectors
 
 	jsr Phase4FillSmallSource
 	jsr Phase4FillLargeSource
@@ -515,6 +506,21 @@ Phase4InstallHighKernal:
 	inc r1H
 	dex
 	bne @page1
+	rts
+
+Phase4InstallRamVectors:
+	lda #<_NMIHandler
+	sta $fffa
+	lda #>_NMIHandler
+	sta $fffb
+	lda #<_ResetHandle
+	sta $fffc
+	lda #>_ResetHandle
+	sta $fffd
+	lda #<_IRQVectorHandler
+	sta $fffe
+	lda #>_IRQVectorHandler
+	sta $ffff
 	rts
 
 Phase4FillSmallSource:

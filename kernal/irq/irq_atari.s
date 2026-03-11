@@ -23,6 +23,7 @@
 .endif
 
 .global _IRQHandler
+.global _IRQVectorHandler
 .global _NMIHandler
 .global InitAtariIRQ
 
@@ -49,6 +50,21 @@ _IRQHandler:
 	tax
 	pla
 	rts
+
+; Raw CPU IRQ vector entry for ROM-off execution.
+_IRQVectorHandler:
+	pha
+	txa
+	pha
+	tya
+	pha
+	jsr AtariIRQCore
+	pla
+	tay
+	pla
+	tax
+	pla
+	rti
 
 ; Direct NMI is not used in Mode A. Keep a benign stub for compatibility.
 _NMIHandler:
