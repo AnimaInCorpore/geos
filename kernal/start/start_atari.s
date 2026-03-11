@@ -97,7 +97,8 @@ PHASE4_SMALL_DST   = BACK_SCR_BASE + $0400
 PHASE4_FILL_SRC    = BACK_SCR_BASE + $0800
 PHASE4_SMALL_LEN   = 600
 PHASE4_FILL_LEN    = 4096
-PHASE4_KERNAL_SRC  = $2000
+PHASE4_KERNAL_SRC0 = $2000
+PHASE4_KERNAL_SRC1 = $5800
 PHASE4_VARS_BASE   = $86c0
 PHASE4_VARS_SIZE   = $0940
 .endif
@@ -385,9 +386,9 @@ Phase4MarkFullPass:
 
 ; Install the staged $C000-$FFFF image from conventional RAM after ROM is disabled.
 Phase4InstallHighKernal:
-	LoadW r0, PHASE4_KERNAL_SRC
+	LoadW r0, PHASE4_KERNAL_SRC0
 	LoadW r1, $c000
-	ldx #$40
+	ldx #$30
 @page:
 	ldy #0
 @byte:
@@ -399,6 +400,20 @@ Phase4InstallHighKernal:
 	inc r1H
 	dex
 	bne @page
+	LoadW r0, PHASE4_KERNAL_SRC1
+	LoadW r1, $f000
+	ldx #$10
+@page1:
+	ldy #0
+@byte1:
+	lda (r0),y
+	sta (r1),y
+	iny
+	bne @byte1
+	inc r0H
+	inc r1H
+	dex
+	bne @page1
 	rts
 
 Phase4FillSmallSource:
