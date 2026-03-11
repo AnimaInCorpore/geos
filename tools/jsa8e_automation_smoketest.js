@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const ENTRY_PC = 0x0501;
+  const DEFAULT_ENTRY_PC = 0x0501;
   const DEFAULT_TIMEOUT_MS = 15000;
   const ROM_PATHS = {
     os: "/ATARIXL.ROM",
@@ -17,6 +17,7 @@
       label: "Phase 2 display",
       prereq: "make atarixl-smoketest",
       xexPath: "/build/atarixl/phase2_smoketest.xex",
+      entryPc: DEFAULT_ENTRY_PC,
       description:
         "Boot the low-RAM Phase 2 display harness, let the static bitmap settle, then capture a screenshot and a small framebuffer dump.",
       caveat: "Repeatable browser automation path. Step sign-off still stays in Altirra.",
@@ -27,6 +28,7 @@
       label: "Phase 3 input",
       prereq: "make atarixl-input-smoketest",
       xexPath: "/build/atarixl/phase3_input_smoketest.xex",
+      entryPc: DEFAULT_ENTRY_PC,
       description:
         "Boot the input smoke harness, inject joystick and keyboard activity through the public automation API, and capture before/after screenshots.",
       caveat: "Repeatable browser automation and smoke evidence path, not final input timing sign-off.",
@@ -38,10 +40,16 @@
       prereq: "make atarixl-disk-smoketest",
       xexPath: "/build/atarixl/phase4_disk_smoketest.xex",
       diskPath: "/build/atarixl/phase4_disk_test.atr",
+      entryPc: 0x0881,
+      runXexOptions: {
+        awaitEntry: false,
+        start: true,
+        resetOptions: { portB: 0xff },
+      },
       description:
-        "Boot the Phase 4 XEX to its $0501 entry breakpoint, replace D1 with the writable ATR, then collect screenshot, trace, and PHASE4_* marker bytes.",
+        "Boot the Phase 4 XEX to its $0881 entry breakpoint, replace D1 with the writable ATR, then collect screenshot, trace, and PHASE4_* marker bytes.",
       caveat:
-        "Browser-side diagnostic/sign-off-prep path: jsA8E cannot boot the XEX and mount the test ATR in D1 simultaneously, so the harness swaps D1 after the boot loader reaches $0501.",
+        "Browser-side diagnostic/sign-off-prep path: jsA8E cannot boot the XEX and mount the test ATR in D1 simultaneously, so the harness swaps D1 after the boot loader reaches $0881.",
       run: runPhase4Disk,
     },
   };
@@ -213,7 +221,12 @@
   }
 
   async function runPhase2Display(api, scenario) {
-    const entryEvent = await bootXexToEntry(api, scenario.xexPath);
+    const entryEvent = await bootXexToEntry(
+      api,
+      scenario.xexPath,
+      scenario.entryPc,
+      scenario.runXexOptions,
+    );
     if (isFailureArtifact(entryEvent)) {
       return buildBootFailureResult(
         scenario,
@@ -245,7 +258,12 @@
   }
 
   async function runPhase3Input(api, scenario) {
-    const entryEvent = await bootXexToEntry(api, scenario.xexPath);
+    const entryEvent = await bootXexToEntry(
+      api,
+      scenario.xexPath,
+      scenario.entryPc,
+      scenario.runXexOptions,
+    );
     if (isFailureArtifact(entryEvent)) {
       return buildBootFailureResult(
         scenario,
@@ -290,7 +308,12 @@
   }
 
   async function runPhase4Disk(api, scenario) {
-    const entryEvent = await bootXexToEntry(api, scenario.xexPath);
+    const entryEvent = await bootXexToEntry(
+      api,
+      scenario.xexPath,
+      scenario.entryPc,
+      scenario.runXexOptions,
+    );
     if (isFailureArtifact(entryEvent)) {
       return buildBootFailureResult(
         scenario,
@@ -298,8 +321,9 @@
         "The Phase 4 XEX still failed before the harness could swap D1 to the test ATR.",
       );
     }
+    const diskUrl = withCacheBust(scenario.diskPath);
     logLine("Swapping D1 to " + scenario.diskPath + " at $" + hex(entryEvent.debugState.pc, 4));
-    const mountResult = await api.media.mountDiskFromUrl(scenario.diskPath, {
+    const mountResult = await api.media.mountDiskFromUrl(diskUrl, {
       name: fileNameFromPath(scenario.diskPath),
       slot: 0,
     });
@@ -347,12 +371,20 @@
     };
   }
 
-  async function bootXexToEntry(api, xexPath) {
-    await api.debug.setBreakpoints([ENTRY_PC]);
-    logLine("Booting " + xexPath + " to entry breakpoint $" + hex(ENTRY_PC, 4));
-    await api.dev.runXexFromUrl(xexPath, {
-      name: fileNameFromPath(xexPath),
-    });
+  async function bootXexToEntry(api, xexPath, entryPc, runXexOptions) {
+    const targetPc = typeof entryPc === "number" ? entryPc & 0xffff : DEFAULT_ENTRY_PC;
+    const xexUrl = withCacheBust(xexPath);
+    await api.debug.setBreakpoints([targetPc]);
+    logLine("Booting " + xexPath + " to entry breakpoint $" + hex(targetPc, 4));
+    await api.dev.runXexFromUrl(
+      xexUrl,
+      Object.assign(
+        {
+          name: fileNameFromPath(xexPath),
+        },
+        runXexOptions || {},
+      ),
+    );
     const stop = await api.debug.waitForBreakpoint({
       timeoutMs: DEFAULT_TIMEOUT_MS,
       immediate: false,
@@ -563,8 +595,9 @@
   }
 
   function buildPhase4Summary(scenario, markers, waitResult) {
+    const entryPc = typeof scenario.entryPc === "number" ? scenario.entryPc & 0xffff : DEFAULT_ENTRY_PC;
     const lines = [
-      "Booted " + scenario.xexPath + " to $" + hex(ENTRY_PC, 4) + " and swapped D1 to " + scenario.diskPath + ".",
+      "Booted " + scenario.xexPath + " to $" + hex(entryPc, 4) + " and swapped D1 to " + scenario.diskPath + ".",
       waitResult && waitResult.ok === false
         ? "Execution paused early with reason '" + (waitResult.reason || "pause") + "'."
         : "Execution was allowed to run for 1500 ms before artifact capture.",
@@ -590,11 +623,12 @@
   }
 
   function buildBootFailureResult(scenario, failure, note) {
+    const entryPc = typeof scenario.entryPc === "number" ? scenario.entryPc & 0xffff : DEFAULT_ENTRY_PC;
     const screenshot = screenshotFromArtifactBundle(failure, scenario.id + "-failure");
     return {
       badge: failure.phase === "waiting_for_console_input" ? "Console Wait" : "Timeout",
       summary: [
-        "Boot attempt for " + scenario.xexPath + " did not reach $" + hex(ENTRY_PC, 4) + ".",
+        "Boot attempt for " + scenario.xexPath + " did not reach $" + hex(entryPc, 4) + ".",
         describeFailure(failure),
         note,
       ],
@@ -757,11 +791,17 @@
   }
 
   async function fetchArrayBuffer(path) {
-    const response = await fetch(path);
+    const response = await fetch(withCacheBust(path));
     if (!response.ok) {
       throw new Error("Unable to fetch " + path + " (" + response.status + ")");
     }
     return response.arrayBuffer();
+  }
+
+  function withCacheBust(path) {
+    const text = String(path || "");
+    const joiner = text.includes("?") ? "&" : "?";
+    return text + joiner + "cb=" + Date.now();
   }
 
   function clearObjectUrls() {
@@ -802,7 +842,8 @@
   }
 
   function fileNameFromPath(path) {
-    const parts = String(path || "").split(/[\\/]/);
+    const normalized = String(path || "").replace(/[?#].*$/, "");
+    const parts = normalized.split(/[\\/]/);
     return parts[parts.length - 1] || "artifact.bin";
   }
 

@@ -1282,7 +1282,7 @@ Optional jsA8E automation path (repeatable browser-side evidence and diagnostics
 - When boot state matters, use the reset-time bank override support (`system.reset({ portB: $FF })`, `system.boot({ portB: $FF })`, or `dev.runXex({ ..., resetOptions: { portB: $FF } })`) so the browser harness can rule out XL self-test / ROM-mapping issues before treating a failure as a GEOS regression.
 - Treat schema-versioned failure bundles (`artifactSchemaVersion: "2"`) as the default browser-side evidence format; they now include debug state, bank state, mounted media, console-key state, trace tail, optional disassembly/source context, and optional screenshots.
 - Keep Altirra as the required sign-off path for steps that explicitly call it out (for example 8, 9, and 20).
-- Treat the jsA8E Phase 4 flow as a diagnostic path only, because it still approximates the final setup by swapping `D1:` after the XEX loader reaches `$0501`.
+- Treat the jsA8E Phase 4 flow as a diagnostic path only, because it still approximates the final setup by swapping `D1:` after the XEX loader reaches the rebased `$0881` smoke entry point.
 
 ### Phase 3: Bring up input (OS-assisted mode)
 10. Write `input/joydrv_atari.s`
@@ -1299,8 +1299,8 @@ Optional jsA8E automation path (repeatable browser-side evidence and diagnostics
 Phase 4 gate before considering step 17 done:
 - Make `EnterTurbo`/`ExitTurbo`/`PurgeTurbo` Atari-safe first. Baseline Atari 1050 bring-up can treat them as compatibility no-ops (or a tiny state-only shim) until a real acceleration path exists.
 - Use the documented Phase 4 smoke harnesses from `README.md` / `JSA8E_AUTOMATION.md`: Altirra with `build/atarixl/phase4_test.ini` and `"Simulator: Error mode" = 2` for sign-off-grade debugging, and the jsA8E smoke path for faster browser-side iteration and artifact capture.
-- In jsA8E, always start the smoke XEX through the newer preflight/boot path (`dev.runXex(...)` / `dev.runXexFromUrl(...)`) and preserve the emitted progress checkpoints plus the structured boot-failure artifact. Treat `xex_boot_failed`, ROM/protected-memory overlap, boot-buffer placement, and self-test-visible bank-state reports as harness/emulator diagnostics that must be cleared before evaluating GEOS disk code.
-- For browser-side bring-up, use reset-time `PORTB` overrides to force the intended XL boot mapping first; if the harness still fails before `$0501`, debug that boot path using the returned bank state, trace tail, optional disassembly, and source context rather than continuing with generic timeout retries.
+- In jsA8E, always start the smoke XEX through the newer preflight/boot path (`dev.runXex(...)` / `dev.runXexFromUrl(...)`) and preserve the emitted progress checkpoints plus the structured boot-failure artifact. For the current Phase 4 smoke XEX, the working browser-side entry flow is `awaitEntry: false` plus a normal breakpoint wait at `$0881`; treat `xex_boot_failed`, ROM/protected-memory overlap, boot-buffer placement, and self-test-visible bank-state reports as harness/emulator diagnostics that must be cleared before evaluating GEOS disk code.
+- For browser-side bring-up, use reset-time `PORTB` overrides to force the intended XL boot mapping first; if the harness still fails before `$0881`, debug that boot path using the returned bank state, trace tail, optional disassembly, and source context rather than continuing with generic timeout retries.
 - Require the smoke path to advance past `OpenDisk -> GetDirHead -> EnterTurbo -> ReadBlock`. If a stop occurs earlier, capture the structured failure bundle and resolve that earlier boot/runtime fault before attributing the failure to `drv1050` or GEOS file-system logic.
 - Only sign off step 17 after directory listing, sequential file read/write, and disk-full detection all pass on Atari `.atr` images such as `build/atarixl/geos.atr` and `build/atarixl/blank_geos.atr`.
 

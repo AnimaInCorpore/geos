@@ -165,14 +165,14 @@ Use:
 
 * XEX: `/build/atarixl/phase4_disk_smoketest.xex`
 * ATR: `/build/atarixl/phase4_disk_test.atr`
-* Entry breakpoint: `$0501`
+* Entry breakpoint: `$0881`
 * Marker block: `$04E7-$04F5`
 
 Flow:
 
-1. `setBreakpoints([0x0501])`
-2. `runXexFromUrl(...)`
-3. wait for breakpoint at `$0501`
+1. `setBreakpoints([0x0881])`
+2. `runXexFromUrl("/build/atarixl/phase4_disk_smoketest.xex", { name: "phase4_disk_smoketest.xex", awaitEntry: false, start: true, resetOptions: { portB: 0xFF } })`
+3. wait for breakpoint at `$0881`
 4. `mountDiskFromUrl("/build/atarixl/phase4_disk_test.atr", { name: "phase4_disk_test.atr", slot: 0 })`
 5. clear breakpoints
 6. `start()`
@@ -182,14 +182,14 @@ Flow:
 
 For Phase 4, this remains a diagnostic and sign-off-prep flow. jsA8E is already a
 real automation surface here, but Altirra is still the sign-off path because the
-browser harness swaps `D1:` after the XEX reaches `$0501` instead of reproducing
+browser harness swaps `D1:` after the XEX reaches `$0881` instead of reproducing
 the final boot configuration exactly.
 
 ## Known Pitfalls
 
 ### Phase 4 current jsA8E state
 
-As of 2026-03-10, jsA8E has the newer automation surface upstream:
+As of 2026-03-11, jsA8E has the newer automation surface upstream:
 
 * `runXexFromUrl(...)`
 * `mountDiskFromUrl(...)`
@@ -200,29 +200,28 @@ As of 2026-03-10, jsA8E has the newer automation surface upstream:
 
 That means the harness and the direct emulator page can both use the same
 URL-native media path. The remaining Phase 4 problem is no longer media
-transport. A Phase 4 jsA8E run still does not reach the expected `$0501` entry
-breakpoint within 15 seconds. The machine settles in a loop around `$5059-$505E`:
+transport or XEX preflight. A Phase 4 jsA8E run now reaches the rebased `$0881`
+entry breakpoint when launched with `awaitEntry: false`, `start: true`, and a
+reset-time `PORTB=$FF` override, then stalls after the writable ATR is swapped
+into `D1:` and the first `ReadBlock` starts.
 
-```text
-$5059  LDA $D01F
-$505C  AND #$01
-$505E  BNE $5059
-```
+The browser harness now appends a cache-busting query to `runXexFromUrl(...)`,
+`mountDiskFromUrl(...)`, and ROM fetches. Without that, Chrome/jsA8E can keep
+serving a stale Phase 4 XEX and report the old `$0500-$1FFF` preflight overlap
+even after the rebuilt `$0880-$1FFF` image exists on disk.
 
-At that point:
+Current observed marker/data state after resuming from `$0881`:
 
-* `D1:` is still not mounted
-* no `PHASE4_*` markers are available yet
-* `bankState.portB` is a high-value clue and should be captured with the failure
-  bundle. In this session the timeout state showed `PORTB=$7F`, which is
-  consistent with XL self-test ROM being visible at `$5000-$57FF` instead of RAM.
-* useful follow-up artifacts are:
-  * the structured failure bundle from `waitForBreakpoint(...)`
-  * paused `debugState`
-  * `traceTail`
-  * disassembly around the current PC
-  * console-key state
-  * progress-event history from the failed run
+* `PHASE4_STAGE=$01`
+* `PHASE4_STATUS=$63`
+* `PHASE4_ERROR=$00`
+* `PHASE4_RESULTS=$00`
+* DCB `$0300-$030B` = `31 01 52 40 00 82 07 00 80 00 65 02`
+
+That corresponds to `OpenDisk -> GetDirHead -> EnterTurbo -> InitForIO -> ReadBlock`
+with an Atari SIO `Read Sector` request for sector `$0265` into `$8200`.
+The browser-side stop is now later inside Atari OS ROM after `SIOV`, not in the
+old pre-entry self-test loop.
 
 ### Cache-busting reload
 
@@ -242,8 +241,8 @@ For the fastest restart next time:
 2. start `python -m http.server 8765`
 3. try the harness page first; it now uses `runXexFromUrl(...)`,
    `mountDiskFromUrl(...)`, progress events, and structured timeout artifacts
-4. if Phase 4 still misses `$0501`, keep the emitted progress log and failure
+4. if Phase 4 still misses `$0881`, keep the emitted progress log and failure
    bundle before retrying in direct Chrome/CDP
-5. for Phase 4, treat a missed `$0501` breakpoint as a real diagnostic result
+5. for Phase 4, treat a missed `$0881` breakpoint as a real diagnostic result
    and keep `debugState`, `traceTail`, disassembly, console-key state, and the
    inferred failure phase before changing code

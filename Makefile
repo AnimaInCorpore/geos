@@ -514,26 +514,26 @@ $(BUILD_DIR)/phase3_input_smoketest.xex: $(BUILD_DIR)/kernal/phase3_input_smoket
 	dd if=$(BUILD_DIR)/input/$(INPUT).bin bs=1 count=384 >> $@ 2> /dev/null
 	printf "\xE0\x02\xE1\x02\x01\x05" >> $@
 
-$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin: $(PREFIXED_KERNAL_OBJS) kernal/kernal_atarixl_smoketest.cfg
+$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin: $(PREFIXED_KERNAL_OBJS) kernal/kernal_atarixl_phase4_smoketest.cfg
 	@mkdir -p $$(dirname $@)
-	$(LD) -C kernal/kernal_atarixl_smoketest.cfg $(PREFIXED_KERNAL_OBJS) -o $@ -m $(BUILD_DIR)/kernal/phase4_disk_smoketest.map -Ln $(BUILD_DIR)/kernal/phase4_disk_smoketest.lab
+	$(LD) -C kernal/kernal_atarixl_phase4_smoketest.cfg $(PREFIXED_KERNAL_OBJS) -o $@ -m $(BUILD_DIR)/kernal/phase4_disk_smoketest.map -Ln $(BUILD_DIR)/kernal/phase4_disk_smoketest.lab
 
 $(BUILD_DIR)/phase4_disk_smoketest.xex: $(BUILD_DIR)/kernal/phase4_disk_smoketest.bin $(BUILD_DIR)/drv/$(DRIVE).bin tools/phase4_disk_smoketest.atdbg
 	@echo Creating $@
 	printf "\xFF\xFF" > $@
-	printf "\x00\x05\xFF\x1F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 count=6912 >> $@ 2> /dev/null
+	printf "\x80\x08\xFF\x1F" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 count=6016 >> $@ 2> /dev/null
 	printf "\x00\x20\xFF\x4F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=7744 count=12288 >> $@ 2> /dev/null
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6848 count=12288 >> $@ 2> /dev/null
 	printf "\x00\x58\xFF\x67" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=20032 count=4096 >> $@ 2> /dev/null
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=19136 count=4096 >> $@ 2> /dev/null
 	printf "\x00\x90\x7F\x9D" >> $@
 	cat $(BUILD_DIR)/drv/$(DRIVE).bin /dev/zero | dd bs=1 count=3456 >> $@ 2> /dev/null
 	printf "\x80\x9D\xFF\x9F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6912 count=640 >> $@ 2> /dev/null
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6016 count=640 >> $@ 2> /dev/null
 	printf "\x40\x3F\xFF\x3F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=7552 count=192 >> $@ 2> /dev/null
-	printf "\xE0\x02\xE1\x02\x01\x05" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6656 count=192 >> $@ 2> /dev/null
+	printf "\xE0\x02\xE1\x02\x81\x08" >> $@
 	cp tools/phase4_disk_smoketest.atdbg $(BUILD_DIR)/phase4_disk_smoketest.xex.atdbg
 
 $(BUILD_DIR)/phase4_disk_test.atr: $(ATARI_DISK_TOOL)
