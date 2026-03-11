@@ -229,18 +229,14 @@ The browser harness now appends a cache-busting query to `runXexFromUrl(...)`,
 serving a stale Phase 4 XEX and report the old `$0500-$1FFF` preflight overlap
 even after the rebuilt `$0880-$1FFF` image exists on disk.
 
-Current observed marker/data state after resuming from `$0881`:
+The current observed marker/data state after resuming from `$0881` in a successful run:
 
 * `PHASE4_STAGE=$01`
-* `PHASE4_STATUS=$63`
+* `PHASE4_STATUS=$67` (ReadBlock success)
 * `PHASE4_ERROR=$00`
-* `PHASE4_RESULTS=$00`
-* DCB `$0300-$030B` = `31 01 52 40 00 82 07 00 80 00 65 02`
+* `PHASE4_RESULTS=$01` (Pass Dir)
 
-That corresponds to `OpenDisk -> GetDirHead -> EnterTurbo -> InitForIO -> ReadBlock`
-with an Atari SIO `Read Sector` request for sector `$0265` into `$8200`.
-The browser-side stop is now later inside Atari OS ROM after `SIOV`, not in the
-old pre-entry self-test loop.
+The earlier SIO stall (stuck at `$66`) was resolved by the updated low-RAM SIO bridge in `kernal/start/start_atari.s`, which now enables NMIs (`NMIEN=$40`) and restores OS VBI vectors during the `SIOV` call. This allows OS timers to increment, enabling `SIOV` to complete and return.
 
 ### Cache-busting reload
 

@@ -1005,38 +1005,72 @@ through a low-RAM trampoline that temporarily banks OS ROM in, executes `jsr SIO
 then banks OS ROM out again:
 
 1. Enter critical section (`DISABLE_NMI`).
-2. Save current `PORTB`.
-3. Bank in the OS call window with `PORTB` bits 0/1/7 forced high so OS ROM is
-   visible while BASIC and self-test stay hidden.
-4. Call `SIOV`.
-5. Restore saved `PORTB` (OS ROM hidden again).
-6. Exit critical section (`ENABLE_NMI`).
+2. Save current `PORTB` and `NMIEN`.
+3. Save the Atari OS vector range `$0200–$0225` into a GEOS-owned buffer, then restore the original Atari OS vectors from a cold-boot snapshot. This is critical because the OS VBI handler must run (using OS vectors) while the OS ROM is banked in, but it must not jump to the RAM-based GEOS VBI vector (`$0224`) which is hidden/inaccessible.
+4. Bank in the OS call window with `PORTB` bits 0/1/7 forced high so OS ROM is visible while BASIC and self-test stay hidden.
+5. Enable the VBI NMI (`lda #$40` / `sta NMIEN`) so the OS VBI handler can update system timers (`RTCLOK`, `CDTMV*`) that `SIOV` relies on for timeouts.
+6. Call `SIOV`.
+7. Disable NMI (`lda #$00` / `sta NMIEN`), restore the saved GEOS vectors to `$0200–$0225`, and restore the saved `PORTB` and `NMIEN`.
+8. Exit critical section (`ENABLE_NMI`).
 
-Important: this wrapper must run from RAM below `$C000` (for example page 2/3),
+Important: this wrapper must run from RAM below `$C000` (for example `$3E00`),
 because enabling OS ROM overlays `$C000–$FFFF` where GEOS KERNAL code normally runs.
-Also keep `NMIEN` forced to zero for the whole banked call window: when OS ROM is
-visible, vectors at `$FFFA–$FFFF` are OS vectors, not GEOS vectors. If an NMI occurs
-in that window, control will enter the OS handler with GEOS runtime state active.
-If a build cannot guarantee `NMIEN=0` throughout, install a temporary low-RAM NMI
-stub (`rti`) before banking OS ROM in.
+The bridge must also preserve and restore the CPU registers (`A`, `X`, `Y`, `P`)
+across the banked call.
 Raw POKEY SIO can be added later only as an optimization path.
 
 ```asm
-; Runs from RAM below $C000
+; Runs from RAM below $C000 (e.g. $3E00)
 SIOBridgeRam:
-    DISABLE_NMI
+    php
+    sei
+    lda NMIEN
+    sta savedNmiEn
     lda PORTB
     sta savedPortB
+    
+    ; Bank OS ROM in
+    lda #$00
+    sta NMIEN       ; stop NMIs while swapping vectors
     ora #$83        ; OS ROM on, BASIC off, self-test off
     sta PORTB
-    lda #$00
-    sta NMIEN       ; force NMI off while vectors point to OS
+    
+    ; Restore OS vectors for SIO/VBI use
+    ldy #37
+@swap:
+    lda $0200,y
+    sta savedVectors,y
+    lda snapshotVectors,y
+    sta $0200,y
+    dey
+    bpl @swap
+
+    lda #$40
+    sta NMIEN       ; enable VBI for OS timers
+    cli
     jsr SIOV
+    sei
+    
+    sta savedA
+    sty savedY
     lda #$00
-    sta NMIEN       ; keep masked until GEOS mapping restored
-    lda savedPortB  ; OS ROM off again
+    sta NMIEN
+    
+    ; Restore GEOS vectors
+    ldy #37
+@restore:
+    lda savedVectors,y
+    sta $0200,y
+    dey
+    bpl @restore
+    
+    lda savedPortB
     sta PORTB
-    ENABLE_NMI
+    lda savedNmiEn
+    sta NMIEN
+    ldy savedY
+    lda savedA
+    plp
     rts
 ```
 

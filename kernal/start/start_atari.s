@@ -247,6 +247,8 @@ InitAtariKeyboard:
 	sta SKCTL
 	lda #$03
 	sta SKCTL
+	sta $0232 ; SSKCTL shadow used by the OS SIO path
+	sta SIO_BRIDGE_SAVED_SSKCTL
 	rts
 
 InstallAtariSioBridge:
@@ -257,12 +259,20 @@ InstallAtariSioBridge:
 	iny
 	cpy #(SioBridgeTemplateEnd-SioBridgeTemplate)
 	bne @copy
-	ldy #$0f
+	ldy #37
 @snapshotVectors:
-	lda $0208,y
+	lda $0200,y
 	sta SIO_BRIDGE_OS_VECTORS,y
 	dey
 	bpl @snapshotVectors
+	lda $0232 ; SSKCTL
+	sta SIO_BRIDGE_SAVED_SSKCTL
+	ldy #5
+@snapshotWorkspace:
+	lda $023a,y
+	sta SIO_BRIDGE_OS_WORKSPACE,y
+	dey
+	bpl @snapshotWorkspace
 	rts
 
 ; Runs from low RAM so the driver can bank OS ROM in for SIOV without
@@ -282,12 +292,25 @@ SioBridgeTemplate:
 	sta NMIEN
 	ora #$83
 	sta PORTB
-	ldy #$0f
-@restoreVectors:
+	ldy #37
+@swapVectors:
+	lda $0200,y
+	sta SIO_BRIDGE_SAVED_VECTORS,y
 	lda SIO_BRIDGE_OS_VECTORS,y
-	sta $0208,y
+	sta $0200,y
 	dey
-	bpl @restoreVectors
+	bpl @swapVectors
+	lda SIO_BRIDGE_SAVED_SSKCTL
+	sta $0232 ; SSKCTL
+	sta SKCTL
+	ldy #5
+@restoreWorkspace:
+	lda SIO_BRIDGE_OS_WORKSPACE,y
+	sta $023a,y
+	dey
+	bpl @restoreWorkspace
+	lda #$40
+	sta NMIEN
 	cli
 	jsr SIOV
 	sei
@@ -295,6 +318,12 @@ SioBridgeTemplate:
 	sty SIO_BRIDGE_SAVED_Y
 	lda #$00
 	sta NMIEN
+	ldy #37
+@restoreVectors:
+	lda SIO_BRIDGE_SAVED_VECTORS,y
+	sta $0200,y
+	dey
+	bpl @restoreVectors
 	lda SIO_BRIDGE_SAVED_PORTB
 	sta PORTB
 	lda SIO_BRIDGE_SAVED_PBCTL
@@ -323,6 +352,7 @@ Phase4SmokeRun:
 	lda PORTB
 	ora #$80
 	sta PORTB
+	jsr InitAtariKeyboard
 
 	; The smoketest XEX does not carry the BSS/VARS area, so clear it explicitly
 	; before invoking GEOS file-system routines that depend on those buffers.
