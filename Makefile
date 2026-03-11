@@ -171,7 +171,8 @@ ifeq ($(VARIANT), atarixl)
 	kernal/irq/irq_atari.s \
 	kernal/keyboard/keyboard_atari.s \
 	kernal/start/vectors_atari.s \
-	kernal/start/start_atari.s
+	kernal/start/start_atari.s \
+	kernal/vars/vars_atari.s
 endif
 
 # code that is in front bank of C128 only

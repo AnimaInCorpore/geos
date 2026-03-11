@@ -22,18 +22,32 @@
 .import GetRandom
 .endif
 
+.global nmiDisableDepth
+.global nmiEnableMask
+.global InitAtariIRQ
 .global _IRQHandler
 .global _IRQVectorHandler
 .global _NMIHandler
-.global InitAtariIRQ
 
 .segment "irq_atari"
 
 InitAtariIRQ:
-	lda #7              ; SETVBV mode 7: deferred VBI
-	ldx #>AtariDeferredVBI
-	ldy #<AtariDeferredVBI
-	jsr SETVBV
+	lda #0
+	sta nmiDisableDepth
+	lda #$40
+	sta nmiEnableMask
+
+	lda #<_NMIHandler
+	sta $FFFA
+	lda #>_NMIHandler
+	sta $FFFB
+	lda #<_IRQVectorHandler
+	sta $FFFE
+	lda #>_IRQVectorHandler
+	sta $FFFF
+
+	lda nmiEnableMask
+	sta NMIEN
 	rts
 
 ; Jump-table callable entry. Kept for compatibility with MainIRQ.
@@ -66,8 +80,34 @@ _IRQVectorHandler:
 	pla
 	rti
 
-; Direct NMI is not used in Mode A. Keep a benign stub for compatibility.
+; Direct NMI handler for Mode B (ROM-off execution)
 _NMIHandler:
+	pha
+	lda NMIST
+	and #$80            ; DLI pending?
+	bne @is_dli
+	lda NMIST
+	and #$40            ; VBI pending?
+	beq @done           ; spurious/unknown NMI source
+
+@is_vbi:
+	sta NMIRES          ; acknowledge VBI only
+	txa
+	pha
+	tya
+	pha
+	jsr AtariIRQCore
+	pla
+	tay
+	pla
+	tax
+@done:
+	pla
+	rti
+
+@is_dli:
+	; TODO: DLI handler (mouse sampling)
+	pla
 	rti
 
 AtariDeferredVBI:

@@ -138,6 +138,11 @@ _ResetHandle:
 	jmp @smokeLoop
 .endif
 
+	; Phase 5: Disable Atari OS ROM to expose GEOS KERNAL RAM at $C000-$FFFF.
+	; This must be done from RAM (the stub) to avoid crashing during the switch.
+	jsr InstallDisableRomStub
+	jsr $0300 ; Call the stub at its RAM location
+
 	; Phase 2 bring-up: ANTIC mode $0F display list and GTIA palette.
 	jsr InitAtariDisplay
 	jsr InitAtariKeyboard
@@ -252,6 +257,23 @@ InitAtariKeyboard:
 	sta $0232 ; SSKCTL shadow used by the OS SIO path
 	sta SIO_BRIDGE_SAVED_SSKCTL
 	rts
+
+InstallDisableRomStub:
+	ldy #0
+@copy:
+	lda DisableRomStubTemplate,y
+	sta $0300,y
+	iny
+	cpy #(DisableRomStubTemplateEnd-DisableRomStubTemplate)
+	bne @copy
+	rts
+
+DisableRomStubTemplate:
+	lda PORTB
+	and #$fe
+	sta PORTB
+	rts
+DisableRomStubTemplateEnd:
 
 InstallAtariSioBridge:
 	ldy #0
