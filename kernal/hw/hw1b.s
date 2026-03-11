@@ -88,7 +88,9 @@ ASSERT_NOT_BELOW_IO
 	lda #0 ; monochrome mode
 	jsr SetColorMode
 .endif
-.if .defined(wheels) || .defined(removeToBASIC)
+.if .defined(atarixl)
+	; Atari keeps OS workspace in page 3; do not copy the C64 vector block there.
+.elseif .defined(wheels) || .defined(removeToBASIC)
 	ldx #32
 @3:	lda KERNALVecTab-1,x
 	sta irqvec-1,x
@@ -104,4 +106,3 @@ ASSERT_NOT_BELOW_IO
 .endif
 ASSERT_NOT_BELOW_IO
 	jmp ResetMseRegion
-

@@ -7,7 +7,7 @@
     os: "/ATARIXL.ROM",
     basic: "/ATARIBAS.ROM",
   };
-  const PHASE4_MARKER_RANGE = { label: "phase4_markers", start: 0x04e7, length: 0x0f };
+  const PHASE4_MARKER_RANGE = { label: "phase4_markers", start: 0x04e7, length: 0x15 };
   const BITMAP_HEAD_RANGE = { label: "bitmap_head", start: 0x4000, length: 0x40 };
   const GUARD_GAP_RANGE = { label: "guard_gap", start: 0x4ff0, length: 0x10 };
 
@@ -360,6 +360,9 @@
           hex(phase4Markers.done, 2),
       );
     }
+    if (waitResult && waitResult.counters) {
+      logLine("Phase 4 counters: " + formatPhase4Counters(waitResult.counters));
+    }
     logLine("Phase 4 paused state: " + formatState(pausedState));
 
     return {
@@ -617,6 +620,23 @@
           hex(markers.done, 2) +
           ".",
       );
+      lines.push(
+        "SIO command=$" +
+          hex(markers.sioCommand, 2) +
+          ", sector=$" +
+          hex(markers.sioSectorH, 2) +
+          hex(markers.sioSectorL, 2) +
+          ", retA=$" +
+          hex(markers.sioRetA, 2) +
+          ", Y=$" +
+          hex(markers.sioY, 2) +
+          ", DSTATS=$" +
+          hex(markers.sioDstats, 2) +
+          ".",
+      );
+    }
+    if (waitResult && waitResult.counters) {
+      lines.push("jsA8E counters: " + formatPhase4Counters(waitResult.counters) + ".");
     }
 
     return lines;
@@ -658,6 +678,12 @@
         dirCount: bytes[9],
         dirType: bytes[10],
         dirName: asciiFromBytes(bytes.slice(11, 15)),
+        sioY: bytes[15],
+        sioDstats: bytes[16],
+        sioSectorL: bytes[17],
+        sioSectorH: bytes[18],
+        sioCommand: bytes[19],
+        sioRetA: bytes[20],
       };
     }
     return null;
@@ -863,6 +889,42 @@
       " SP=$" +
       hex(state.sp, 2)
     );
+  }
+
+  function formatPhase4Counters(counters) {
+    if (!counters || typeof counters !== "object") return "n/a";
+    return [
+      "cycle=" + formatCounterValue(counters.cycleCounter),
+      "irqPending=" + formatCounterValue(counters.irqPending),
+      "nextIo=" + formatCounterValue(counters.ioCycleTimedEventCycle),
+      "outDone=" + formatCounterValue(counters.serialOutputTransmissionDoneCycle),
+      "outNeed=" + formatCounterValue(counters.serialOutputNeedDataCycle),
+      "inReady=" + formatCounterValue(counters.serialInputDataReadyCycle),
+      "outIdx=" + formatCounterValue(counters.sioOutIndex),
+      "outPhase=" + formatCounterValue(counters.sioOutPhase),
+      "dataIdx=" + formatCounterValue(counters.sioDataIndex),
+      "pendDev=$" + formatCounterHex(counters.sioPendingDevice, 2),
+      "pendCmd=$" + formatCounterHex(counters.sioPendingCmd, 2),
+      "pendSec=$" + formatCounterHex(counters.sioPendingSector, 4),
+      "pendBytes=" + formatCounterValue(counters.sioPendingBytes),
+      "inIdx=" + formatCounterValue(counters.sioInIndex),
+      "inSize=" + formatCounterValue(counters.sioInSize),
+      "IRQEN=$" + formatCounterHex(counters.irqen, 2),
+      "IRQST=$" + formatCounterHex(counters.irqst, 2),
+      "SEROUT=$" + formatCounterHex(counters.serout, 2),
+      "SERIN=$" + formatCounterHex(counters.serin, 2),
+      "$11=$" + formatCounterHex(counters.brkkey, 2),
+      "$3A=$" + formatCounterHex(counters.xmtdon, 2),
+      "$3B=$" + formatCounterHex(counters.rcvdon, 2),
+    ].join(" ");
+  }
+
+  function formatCounterValue(value) {
+    return typeof value === "number" && Number.isFinite(value) ? String(value >>> 0) : "n/a";
+  }
+
+  function formatCounterHex(value, width) {
+    return typeof value === "number" && Number.isFinite(value) ? hex(value, width) : "n/a";
   }
 
   function hex(value, width) {

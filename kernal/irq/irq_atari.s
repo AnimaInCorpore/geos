@@ -29,7 +29,7 @@
 .segment "irq_atari"
 
 InitAtariIRQ:
-	lda #6              ; SETVBV mode 6: deferred VBI
+	lda #7              ; SETVBV mode 7: deferred VBI
 	ldx #>AtariDeferredVBI
 	ldy #<AtariDeferredVBI
 	jsr SETVBV

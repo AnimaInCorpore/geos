@@ -570,7 +570,7 @@ and lets the OS continue to manage SIO, RTCLOK, and keyboard repeat.
 ```asm
 ; Install GEOS deferred VBI handler via OS SETVBV routine
 ; (OS must be active; VVBLKD is at $0224)
-    lda #6              ; SETVBV code 6 = set deferred VBI
+    lda #7              ; SETVBV code 7 = set deferred VBI
     ldx #>geos_vbi      ; handler address high
     ldy #<geos_vbi      ; handler address low
     jsr SETVBV          ; OS SETVBV entry
@@ -1006,7 +1006,8 @@ then banks OS ROM out again:
 
 1. Enter critical section (`DISABLE_NMI`).
 2. Save current `PORTB`.
-3. Set `PORTB` bit 0 = 1 (OS ROM visible).
+3. Bank in the OS call window with `PORTB` bits 0/1/7 forced high so OS ROM is
+   visible while BASIC and self-test stay hidden.
 4. Call `SIOV`.
 5. Restore saved `PORTB` (OS ROM hidden again).
 6. Exit critical section (`ENABLE_NMI`).
@@ -1026,7 +1027,7 @@ SIOBridgeRam:
     DISABLE_NMI
     lda PORTB
     sta savedPortB
-    ora #$01        ; OS ROM on
+    ora #$83        ; OS ROM on, BASIC off, self-test off
     sta PORTB
     lda #$00
     sta NMIEN       ; force NMI off while vectors point to OS

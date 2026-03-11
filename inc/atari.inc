@@ -136,3 +136,13 @@ VVBLKD   = $0224 ; Deferred VBI vector (2-byte pointer, OS-managed)
 RTCLOK   = $0012 ; 3-byte real-time clock incremented each VBI ($12/$13/$14)
 CH       = $02FC ; OS keyboard shadow: $FF = no key pending, else ATASCII code
 KEYREP   = $02DA ; OS keyboard repeat counter
+
+; Low-RAM ROM-banking bridge for OS-assisted SIO calls.
+; Keep the code and scratch below $3F40 so it does not overlap icon data.
+SIO_BRIDGE_BASE        = $3EC0
+SIO_BRIDGE_SAVED_NMIEN = SIO_BRIDGE_BASE + $50
+SIO_BRIDGE_SAVED_PBCTL = SIO_BRIDGE_BASE + $51
+SIO_BRIDGE_SAVED_PORTB = SIO_BRIDGE_BASE + $52
+SIO_BRIDGE_SAVED_A     = SIO_BRIDGE_BASE + $53
+SIO_BRIDGE_SAVED_Y     = SIO_BRIDGE_BASE + $54
+SIO_BRIDGE_OS_VECTORS  = SIO_BRIDGE_BASE + $60

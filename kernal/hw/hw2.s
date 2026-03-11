@@ -16,6 +16,9 @@
 
 .if !.defined(wheels) && (!.defined(removeToBASIC))
 Init_KRNLVec:
+.ifdef atarixl
+	rts
+.else
 	ldx #32
 @1:	lda KERNALVecTab-1,x
 	sta irqvec-1,x
@@ -23,4 +26,4 @@ Init_KRNLVec:
 	bne @1
 	rts
 .endif
-
+.endif

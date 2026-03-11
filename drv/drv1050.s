@@ -18,6 +18,12 @@ PHASE4_DBG_VEC_LO  = $04f2
 PHASE4_DBG_VEC_HI  = $04f3
 PHASE4_DBG_STK1    = $04f4
 PHASE4_DBG_STK2    = $04f5
+PHASE4_SIOY        = $04f6
+PHASE4_SIODST      = $04f7
+PHASE4_SIOSECL     = $04f8
+PHASE4_SIOSECH     = $04f9
+PHASE4_SIOCMD      = $04fa
+PHASE4_SIORETA     = $04fb
 PHASE4_STATUS      = $04ec
 .endif
 
@@ -789,6 +795,9 @@ DoSioSectorIO:
 	jsr SetupSioDCB
 	lda sioCommand
 	sta DCOMND
+.ifdef atarixl_disk_smoketest
+	sta PHASE4_SIOCMD
+.endif
 	lda sioDirection
 	sta DSTATS
 	lda sioBufferL
@@ -797,37 +806,28 @@ DoSioSectorIO:
 	sta DBUFHI
 	lda sioSectorL
 	sta DAUX1
+.ifdef atarixl_disk_smoketest
+	sta PHASE4_SIOSECL
+.endif
 	lda sioSectorH
 	sta DAUX2
+.ifdef atarixl_disk_smoketest
+	sta PHASE4_SIOSECH
+	LoadB PHASE4_STATUS, $66
+.endif
 	php
-	lda PBCTL
-	pha
-	lda NMIEN
-	pha
-	lda #$00
-	sta NMIEN
-	lda #$3c
-	sta PBCTL
-	lda PORTB
-	pha
-	ora #$01
-	sta PORTB
-	cli
-	jsr SIOV
 	sei
-	pla
-	sta savedPortB
-	pla
-	sta savedNMIEN
-	pla
-	sta savedPBCTL
-	lda savedPortB
-	sta PORTB
-	lda savedPBCTL
-	sta PBCTL
-	lda savedNMIEN
-	sta NMIEN
+	jsr SIO_BRIDGE_BASE
 	plp
+.ifdef atarixl_disk_smoketest
+	sta PHASE4_SIORETA
+	tya
+	sta PHASE4_SIOY
+	lda DSTATS
+	sta PHASE4_SIODST
+	LoadB PHASE4_STATUS, $67
+	tya
+.endif
 	tya
 	bmi SioError
 	lda DSTATS
@@ -861,13 +861,6 @@ SetupSioDCB:
 	lda #0
 	sta DBYTHI
 	rts
-
-savedPortB:
-	.byte 0
-savedPBCTL:
-	.byte 0
-savedNMIEN:
-	.byte 0
 
 MapSIOError:
 	tay

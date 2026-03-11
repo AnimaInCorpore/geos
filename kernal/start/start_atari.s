@@ -76,6 +76,12 @@ PHASE4_DIRNAME0    = $04f2
 PHASE4_DIRNAME1    = $04f3
 PHASE4_DIRNAME2    = $04f4
 PHASE4_DIRNAME3    = $04f5
+PHASE4_SIOY        = $04f6
+PHASE4_SIODST      = $04f7
+PHASE4_SIOSECL     = $04f8
+PHASE4_SIOSECH     = $04f9
+PHASE4_SIOCMD      = $04fa
+PHASE4_SIORETA     = $04fb
 
 PHASE4_STAGE_PRE_OPEN  = 1
 PHASE4_STAGE_POST_OPEN = 2
@@ -108,6 +114,7 @@ _ResetHandle:
 	cld
 	ldx #$ff
 	txs
+	jsr InstallAtariSioBridge
 
 .ifdef atarixl_disk_smoketest
 	jmp Phase4SmokeRun
@@ -242,6 +249,64 @@ InitAtariKeyboard:
 	sta SKCTL
 	rts
 
+InstallAtariSioBridge:
+	ldy #0
+@copy:
+	lda SioBridgeTemplate,y
+	sta SIO_BRIDGE_BASE,y
+	iny
+	cpy #(SioBridgeTemplateEnd-SioBridgeTemplate)
+	bne @copy
+	ldy #$0f
+@snapshotVectors:
+	lda $0208,y
+	sta SIO_BRIDGE_OS_VECTORS,y
+	dey
+	bpl @snapshotVectors
+	rts
+
+; Runs from low RAM so the driver can bank OS ROM in for SIOV without
+; executing out from underneath the high kernal mapping.
+SioBridgeTemplate:
+	php
+	sei
+	lda NMIEN
+	sta SIO_BRIDGE_SAVED_NMIEN
+	lda PBCTL
+	sta SIO_BRIDGE_SAVED_PBCTL
+	lda #$3c
+	sta PBCTL
+	lda PORTB
+	sta SIO_BRIDGE_SAVED_PORTB
+	lda #$00
+	sta NMIEN
+	ora #$83
+	sta PORTB
+	ldy #$0f
+@restoreVectors:
+	lda SIO_BRIDGE_OS_VECTORS,y
+	sta $0208,y
+	dey
+	bpl @restoreVectors
+	cli
+	jsr SIOV
+	sei
+	sta SIO_BRIDGE_SAVED_A
+	sty SIO_BRIDGE_SAVED_Y
+	lda #$00
+	sta NMIEN
+	lda SIO_BRIDGE_SAVED_PORTB
+	sta PORTB
+	lda SIO_BRIDGE_SAVED_PBCTL
+	sta PBCTL
+	lda SIO_BRIDGE_SAVED_NMIEN
+	sta NMIEN
+	ldy SIO_BRIDGE_SAVED_Y
+	lda SIO_BRIDGE_SAVED_A
+	plp
+	rts
+SioBridgeTemplateEnd:
+
 .ifdef atarixl_disk_smoketest
 Phase4SmokeRun:
 	lda #$3c
@@ -281,6 +346,12 @@ Phase4SmokeRun:
 	sta PHASE4_DIRNAME1
 	sta PHASE4_DIRNAME2
 	sta PHASE4_DIRNAME3
+	sta PHASE4_SIOY
+	sta PHASE4_SIODST
+	sta PHASE4_SIOSECL
+	sta PHASE4_SIOSECH
+	sta PHASE4_SIOCMD
+	sta PHASE4_SIORETA
 
 	LoadB NUMDRV, 1
 	LoadB curDrive, 8

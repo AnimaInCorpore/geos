@@ -355,7 +355,7 @@ else
 ifeq ($(VARIANT),atarixl)
 $(BUILD_DIR)/$(ATR_RESULT): $(BUILD_DIR)/kernal_combined.prg $(ATARI_DISK_TOOL) $(ATARIXL_CVT_FILES)
 	@echo Creating $@
-	python $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@ $(ATARIXL_CVT_FILES)
+	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@ $(ATARIXL_CVT_FILES)
 else
 $(BUILD_DIR)/$(D64_RESULT): $(BUILD_DIR)/kernal_compressed.prg
 	@if [ -e $(D64_TEMPLATE) ]; then \
@@ -538,7 +538,7 @@ $(BUILD_DIR)/phase4_disk_smoketest.xex: $(BUILD_DIR)/kernal/phase4_disk_smoketes
 
 $(BUILD_DIR)/phase4_disk_test.atr: $(ATARI_DISK_TOOL)
 	@echo Creating $@
-	python $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@
+	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@
 endif
 
 $(BUILD_DIR)/kernal/kernal2.bin: $(PREFIXED_KERNAL2_OBJS) kernal/kernal2_$(VARIANT).cfg
