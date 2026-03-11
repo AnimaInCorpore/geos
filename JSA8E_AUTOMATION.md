@@ -39,6 +39,12 @@ when the harness is failing before it reaches the real emulator work. Direct
 automation now has feature parity with the harness on media loading because
 jsA8E exposes URL-native `runXexFromUrl(...)` and `mountDiskFromUrl(...)`.
 
+If worker-backed automation is the variable you are trying to eliminate, boot
+the emulator page with `?a8e_worker=0` or set
+`window.A8E_BOOT_OPTIONS = { worker: false }` before `ui.js` runs. That forces
+the main-thread backend while keeping the same public `window.A8EAutomation`
+contract.
+
 ## Recommended Chrome Launch
 
 Chrome is installed at:
@@ -81,28 +87,33 @@ Two practical notes from recent runs:
 When driving jsA8E directly:
 
 1. Wait for `window.A8EAutomation.whenReady()`.
-2. Pause the machine and clear inputs/breakpoints before each run.
-3. Load ROMs explicitly if they are not already present:
+2. Snapshot the machine with `getSystemState({ timeoutMs: ... })` before each
+   run. Treat a returned `error.details.parts` payload as partial state, not as
+   a generic hang.
+3. Pause the machine and clear inputs/breakpoints before each run. Worker-backed
+   `start()` / `pause()` / `reset()` now resolve only after the state transition
+   is acknowledged.
+4. Load ROMs explicitly if they are not already present:
    * `/ATARIXL.ROM`
    * `/ATARIBAS.ROM`
-4. Prefer `dev.runXexFromUrl("/build/atarixl/....xex")` and
+5. Prefer `dev.runXexFromUrl("/build/atarixl/....xex")` and
    `media.mountDiskFromUrl("/build/atarixl/....atr")` over manual fetch-plus-buffer
    handoff.
    Do not use `../build/...` from the harness page: the embedded iframe runs at
    `/third_party/A8E/jsA8E/index.html`, so jsA8E resolves media URLs relative to
    that location and `../build/...` incorrectly points at `/third_party/A8E/build/...`
    instead of the repo-root `/build/...` tree.
-5. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
+6. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
    media issues. The progress phases now distinguish resource fetch, media
    acceptance, loader installation, loader execution, entry-PC success, and
    timeout/failure phases.
-6. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` as
+7. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` as
    structured failure bundles, not only as exceptions. They can already include
    `debugState`, `traceTail`, disassembly, console-key state, mounted media,
    and an optional screenshot.
-7. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
+8. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
    `debug.runUntilPcOrSnapshot(...)` before writing one-off harness code.
-8. In headless CDP runs, do not assume the harness query string
+9. In headless CDP runs, do not assume the harness query string
    (`?scenario=...&autorun=1`) is sufficient evidence that a scenario actually
    started. Confirm via the harness DOM/log state, or set the scenario and
    trigger the run explicitly through CDP.
@@ -185,6 +196,10 @@ real automation surface here, but Altirra is still the sign-off path because the
 browser harness swaps `D1:` after the XEX reaches `$0881` instead of reproducing
 the final boot configuration exactly.
 
+Before and after the ATR swap, capture `getSystemState({ timeoutMs: ... })` so
+the failure bundle records ROM readiness, mounted media, bank state, and any
+partial worker-read failures alongside the disk markers.
+
 ## Known Pitfalls
 
 ### Phase 4 current jsA8E state
@@ -199,11 +214,15 @@ As of 2026-03-11, jsA8E has the newer automation surface upstream:
 * structured timeout bundles from `waitForPc()` / `waitForBreakpoint()`
 
 That means the harness and the direct emulator page can both use the same
-URL-native media path. The remaining Phase 4 problem is no longer media
-transport or XEX preflight. A Phase 4 jsA8E run now reaches the rebased `$0881`
-entry breakpoint when launched with `awaitEntry: false`, `start: true`, and a
-reset-time `PORTB=$FF` override, then stalls after the writable ATR is swapped
-into `D1:` and the first `ReadBlock` starts.
+URL-native media path. The earlier automation deadlocks are no longer the main
+problem: worker lifecycle calls acknowledge completion, `getSystemState()`
+degrades into partial-state errors instead of hanging, and the same API can be
+forced into main-thread mode for deterministic fallback. The remaining Phase 4
+problem is later in disk/runtime behavior, not media transport or XEX preflight.
+A Phase 4 jsA8E run now reaches the rebased `$0881` entry breakpoint when
+launched with `awaitEntry: false`, `start: true`, and a reset-time `PORTB=$FF`
+override, then stalls after the writable ATR is swapped into `D1:` and the
+first `ReadBlock` starts.
 
 The browser harness now appends a cache-busting query to `runXexFromUrl(...)`,
 `mountDiskFromUrl(...)`, and ROM fetches. Without that, Chrome/jsA8E can keep
@@ -239,10 +258,15 @@ For the fastest restart next time:
 
 1. rebuild the needed smoke target
 2. start `python -m http.server 8765`
-3. try the harness page first; it now uses `runXexFromUrl(...)`,
-   `mountDiskFromUrl(...)`, progress events, and structured timeout artifacts
-4. if Phase 4 still misses `$0881`, keep the emitted progress log and failure
+3. run `npm run test:automation` in `third_party/A8E/jsA8E` if you need to
+   confirm the current automation layer before debugging GEOS-specific behavior
+4. try the harness page first; it now uses `runXexFromUrl(...)`,
+   `mountDiskFromUrl(...)`, progress events, structured timeout artifacts, and
+   acknowledged worker lifecycle control
+5. if the worker path is suspect, retry the emulator page with `?a8e_worker=0`
+   before changing GEOS code
+6. if Phase 4 still misses `$0881`, keep the emitted progress log and failure
    bundle before retrying in direct Chrome/CDP
-5. for Phase 4, treat a missed `$0881` breakpoint as a real diagnostic result
+7. for Phase 4, treat a missed `$0881` breakpoint as a real diagnostic result
    and keep `debugState`, `traceTail`, disassembly, console-key state, and the
    inferred failure phase before changing code

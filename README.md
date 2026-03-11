@@ -166,12 +166,21 @@ The harness now uses jsA8E's URL-native automation entry points:
 * `events.subscribe("progress", ...)`
 * structured timeout/failure bundles from `waitForBreakpoint(...)`
 
+The current jsA8E automation layer is also more resilient than the earlier
+browser bring-up path: worker-backed `start()` / `pause()` / `reset()` now wait
+for acknowledgement before resolving, `getSystemState({ timeoutMs })` returns
+partial state with structured per-part errors instead of hanging indefinitely,
+and headless/manual debugging can force the main-thread backend with
+`?a8e_worker=0` (or `window.A8E_BOOT_OPTIONS = { worker: false }` before
+`ui.js` runs).
+
 It also adds cache-busting query strings to Phase 4 XEX/ATR/ROM fetches so the
 browser path always picks up the freshly rebuilt smoketest artifacts instead of
 reusing stale cached copies.
 
-That means the remaining jsA8E Phase 4 blocker is no longer XEX preflight or the
-entry breakpoint itself. The rebased Phase 4 smoketest now reaches `$0881` via
+That means the remaining jsA8E Phase 4 blocker is no longer the old automation
+deadlock, XEX preflight, or the entry breakpoint itself. The rebased Phase 4
+smoketest now reaches `$0881` via
 `runXexFromUrl(..., { awaitEntry: false, start: true, resetOptions: { portB: 0xFF } })`,
 but the first resumed `ReadBlock` still stalls later inside Atari OS SIO after
 the writable ATR is swapped into `D1:`.
