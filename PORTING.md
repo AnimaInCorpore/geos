@@ -1382,14 +1382,14 @@ Phase 2 gate before considering step 9 done:
 - Validate drawing across the LMS jump boundary (`y=101` to `y=102`) to ensure no wrap artifacts.
 - Confirm GRAFM_W and all GRAFPx registers are zeroed in the GTIA init block so no garbage missile or player data appears on screen.
 
-Preferred jsA8E browser-side iteration path (repeatable evidence and diagnostics; not Altirra sign-off):
-- Use the smoke-test workflows documented in `README.md` ("Atari XL Smoke Testing (jsA8E)") and `third_party/A8E/implementation/jsA8E/AUTOMATION.md`.
-- Start each browser run by checking `getCapabilities()` / `getSystemState({ timeoutMs: ... })` and treat `groupedApi`, `urlXexLoad`, `urlDiskLoad`, `failureSnapshots`, `progressEvents`, `waitPrimitives`, and `resetPortBOverride` as the required automation baseline for Atari bring-up. Treat `getSystemState()` partial returns with structured `error.details.parts` as degraded-but-usable diagnostics, not as a generic automation hang.
-- Prefer the grouped `window.A8EAutomation` surface: `dev.runXexFromUrl(...)` / `dev.runXex(...)`, `media.mountDiskFromUrl(...)`, `debug.runUntilPcOrSnapshot(...)`, `debug.waitForBreakpoint(...)`, `artifacts.captureFailureState(...)`, and `events.subscribe("progress", ...)`.
-- Assume worker-backed `system.start()` / `system.pause()` / `system.reset()` are now request/response calls that acknowledge completion before resolving; treat later Phase 4 failures as disk/runtime faults unless those lifecycle calls fail explicitly.
-- When boot state matters, use the reset-time bank override support (`system.reset({ portB: $FF })`, `system.boot({ portB: $FF })`, or `dev.runXex({ ..., resetOptions: { portB: $FF } })`) so the browser harness can rule out XL self-test / ROM-mapping issues before treating a failure as a GEOS regression.
-- When you need a deterministic browser-side fallback, force the main-thread backend with `?a8e_worker=0` (or `window.A8E_BOOT_OPTIONS = { worker: false }` before `ui.js` runs) instead of inventing a separate harness API.
-- Treat schema-versioned failure bundles (`artifactSchemaVersion: "2"`) as the default browser-side evidence format; they now include debug state, bank state, mounted media, console-key state, trace tail, optional disassembly/source context, and optional screenshots.
+Preferred jsA8E iteration path (repeatable evidence and diagnostics; not Altirra sign-off):
+- Use `createHeadlessAutomation(...)` from `jsA8E/headless.js` as the primary iteration path. It runs as a pure Node.js process — no browser, no HTTP server, no Chrome CDP wiring, no cache-busting concerns. The returned `api` has the same grouped surface (`system.*`, `media.*`, `debug.*`, `dev.*`, `artifacts.*`, `events.*`) as the browser's `window.A8EAutomation`. Run `npm run test:automation` in `third_party/A8E/jsA8E` to confirm the automation layer before writing scenario scripts.
+- Fall back to the browser path (documented in `JSA8E_AUTOMATION.md`) only when live visual inspection or the harness UI is needed.
+- Start each run by checking `getCapabilities()` / `getSystemState({ timeoutMs: ... })` and treat `groupedApi`, `urlXexLoad`, `urlDiskLoad`, `failureSnapshots`, `progressEvents`, `waitPrimitives`, and `resetPortBOverride` as the required automation baseline for Atari bring-up. Treat `getSystemState()` partial returns with structured `error.details.parts` as degraded-but-usable diagnostics, not as a generic automation hang.
+- Prefer the grouped API surface: `dev.runXex(...)` / `dev.runXexFromUrl(...)`, `media.mountDisk(...)` / `media.mountDiskFromUrl(...)`, `debug.runUntilPcOrSnapshot(...)`, `debug.waitForBreakpoint(...)`, `artifacts.captureFailureState(...)`, and `events.subscribe("progress", ...)`.
+- `system.start()` / `system.pause()` / `system.reset()` are request/response calls that acknowledge completion before resolving; treat later Phase 4 failures as disk/runtime faults unless those lifecycle calls fail explicitly.
+- When boot state matters, use the reset-time bank override support (`system.reset({ portB: $FF })`, `system.boot({ portB: $FF })`, or `dev.runXex({ ..., resetOptions: { portB: $FF } })`) so the harness can rule out XL self-test / ROM-mapping issues before treating a failure as a GEOS regression.
+- Treat schema-versioned failure bundles (`artifactSchemaVersion: "2"`) as the default evidence format; they include debug state, bank state, mounted media, console-key state, trace tail, optional disassembly/source context, and optional screenshots.
 - Keep Altirra as the required sign-off path for steps that explicitly call it out (for example 8, 9, 17, 20, and 21).
 - Treat the jsA8E Phase 4 flow as a diagnostic path only, because it still approximates the final setup by swapping `D1:` after the XEX loader reaches the rebased `$0881` smoke entry point.
 
@@ -1418,11 +1418,11 @@ Phase 3 gate before considering step 13 done:
 
 Phase 4 gate before considering step 17 done:
 - Make `EnterTurbo`/`ExitTurbo`/`PurgeTurbo` Atari-safe first. Baseline Atari 1050 bring-up can treat them as compatibility no-ops (or a tiny state-only shim) until a real acceleration path exists.
-- Use the documented Phase 4 smoke harnesses from `README.md` / `third_party/A8E/implementation/jsA8E/AUTOMATION.md`: Altirra with `build/atarixl/phase4_test.ini` and `"Simulator: Error mode" = 2` for sign-off-grade debugging, and the jsA8E smoke path for faster browser-side iteration and artifact capture.
-- In jsA8E, always start the smoke XEX through the newer preflight/boot path (`dev.runXex(...)` / `dev.runXexFromUrl(...)`) and preserve the emitted progress checkpoints plus the structured boot-failure artifact. For the current Phase 4 smoke XEX, the working browser-side entry flow is `awaitEntry: false` plus a normal breakpoint wait at `$0881`; treat `xex_boot_failed`, ROM/protected-memory overlap, boot-buffer placement, self-test-visible bank-state reports, and any explicit lifecycle-request timeout as harness/emulator diagnostics that must be cleared before evaluating GEOS disk code.
-- Use `media.mountDiskFromUrl(...)` with cache-busting fetch controls for the writable ATR swap, and record `getSystemState({ timeoutMs: ... })` before and after the mount so the artifact bundle captures the exact ROM/media/bank state for the failed run even when one backend read degrades into partial state.
-- For browser-side bring-up, use reset-time `PORTB` overrides to force the intended XL boot mapping first; if the harness still fails before `$0881`, debug that boot path using the returned bank state, trace tail, optional disassembly, source context, and explicit pause/fault reason instead of continuing with generic timeout retries.
-- If worker-backed browser runs remain ambiguous, retry the same flow in main-thread mode via `?a8e_worker=0` before attributing the result to `drv1050` or GEOS file-system logic.
+- Use `createHeadlessAutomation(...)` from `jsA8E/headless.js` as the primary iteration path for faster, deterministic smoke runs (no browser or HTTP server needed). Fall back to the browser harness or Altirra-with-INI path only for visual inspection or when a problem does not reproduce headless.
+- Use Altirra with `build/atarixl/phase4_test.ini` and `"Simulator: Error mode" = 2` for sign-off-grade debugging.
+- Always start the smoke XEX through the preflight/boot path (`dev.runXex(...)` / `dev.runXexFromUrl(...)`) and preserve the emitted progress checkpoints plus the structured boot-failure artifact. For the current Phase 4 smoke XEX, the working entry flow is `awaitEntry: false` plus a normal breakpoint wait at `$0881`; treat `xex_boot_failed`, ROM/protected-memory overlap, boot-buffer placement, self-test-visible bank-state reports, and any explicit lifecycle-request timeout as automation diagnostics that must be cleared before evaluating GEOS disk code.
+- Use `media.mountDisk(...)` / `media.mountDiskFromUrl(...)` for the writable ATR swap, and record `getSystemState({ timeoutMs: ... })` before and after the mount so the artifact bundle captures the exact ROM/media/bank state for the failed run even when one read degrades into partial state.
+- For bring-up, use reset-time `PORTB` overrides to force the intended XL boot mapping first; if the harness still fails before `$0881`, debug that boot path using the returned bank state, trace tail, optional disassembly, source context, and explicit pause/fault reason instead of continuing with generic timeout retries.
 - Require the smoke path to advance past `OpenDisk -> GetDirHead -> EnterTurbo -> ReadBlock`. If a stop occurs earlier, capture the structured failure bundle and resolve that earlier boot/runtime fault before attributing the failure to `drv1050` or GEOS file-system logic.
 - Only sign off step 17 after directory listing, sequential file read/write, and disk-full detection all pass on Atari `.atr` images such as `build/atarixl/geos.atr` and `build/atarixl/blank_geos.atr`.
 
@@ -1433,7 +1433,7 @@ Phase 4 gate before considering step 17 done:
 21. Verify GEOS desktop loads end-to-end from cartridge + floppy; then test on **PAL** hardware
 
 Phase 5 prerequisites and disk rule:
-- Do not start ROM-disable/cartridge work until Phase 4 disk I/O succeeds end-to-end with OS ROM enabled in Altirra. Use jsA8E in parallel as the faster browser-side path to clear pre-entry boot issues, confirm bank-state assumptions, and iterate on low-RAM staging/copy-under-ROM behavior, but do not block Phase 5 on jsA8E reproducing the exact final `D1:` boot configuration.
+- Do not start ROM-disable/cartridge work until Phase 4 disk I/O succeeds end-to-end with OS ROM enabled in Altirra. Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary iteration path for faster, deterministic smoke runs — no browser or HTTP server needed. Fall back to the browser path only for visual inspection or when a problem does not reproduce headless.
 - Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Reuse the Phase 4 staging/copy-under-ROM path and do not block Phase 5 on raw POKEY SIO.
 - If a raw-SIO optimisation path is prototyped in Phase 5 or later, calculate the POKEY baud-rate divisor against the **PAL clock (~1.773 MHz)**, not the NTSC figure (~1.790 MHz). Standard Atari SIO at 19,200 baud: `divisor = (1,773,000 / (2 × 19,200)) − 7 ≈ 39`. Using the NTSC divisor (~40) on PAL hardware shifts the baud rate by ~1%, which is within tolerance for most drives but will cause framing errors on marginal hardware.
 
@@ -1458,7 +1458,7 @@ Step 26 timing requirement:
 - All frame-based timing constants (cursor blink, keyboard repeat, scheduler tick divisors) must load `vbiHz` at runtime rather than assume 50.
 
 Phase 6 regression note:
-- Use jsA8E first for repeatable browser-side regression capture (screenshots, traces, failure bundles, and scripted input) across Phases 2-4 smoke binaries and selected cartridge/ROM-off bring-up binaries, then repeat milestone sign-off in Altirra and on PAL hardware where required.
+- Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary regression capture path (screenshots, traces, failure bundles, and scripted input) across Phases 2-4 smoke binaries and selected cartridge/ROM-off bring-up binaries. Fall back to the browser path only for live visual inspection. Then repeat milestone sign-off in Altirra and on PAL hardware where required.
 
 ---
 

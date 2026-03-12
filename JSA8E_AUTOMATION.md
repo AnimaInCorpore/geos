@@ -1,8 +1,9 @@
 # jsA8E Automation Quick Start
 
 This note records the shortest reliable path for running the Atari XL smoke
-checks through `window.A8EAutomation`, plus the current failure modes that are
-easy to forget between sessions.
+checks through `jsA8E/headless.js` (Node.js, no browser required) or through
+`window.A8EAutomation` (browser), plus the current failure modes that are easy
+to forget between sessions.
 
 ## Build Prerequisites
 
@@ -14,7 +15,88 @@ Build the smoke artifact that matches the test you want to run:
 
 The current Atari XL smoke artifacts live under `build/atarixl/`.
 
-## Serve The Repo Root
+## Headless Node.js (Recommended)
+
+jsA8E can now run as a pure Node.js process — no browser, no HTTP server, no
+Chrome DevTools Protocol. This is the recommended default path for automated
+smoke checks and CI.
+
+```javascript
+const { createHeadlessAutomation } = require("third_party/A8E/jsA8E/headless");
+
+const runtime = await createHeadlessAutomation({
+  roms: {
+    os:    "ATARIXL.ROM",
+    basic: "ATARIBAS.ROM",
+  },
+  turbo: true,            // run as fast as possible
+  frameDelayMs: 0,        // no inter-frame sleep
+});
+
+const api = runtime.api;
+// api has the same grouped surface as window.A8EAutomation:
+//   system.*, media.*, input.*, debug.*, dev.*, artifacts.*, events.*
+
+// ... run your test scenario ...
+
+await runtime.dispose();
+```
+
+**No external npm dependencies** — only Node.js built-ins (`fs`, `path`, `vm`,
+`zlib`). The existing test suite runs with:
+
+```powershell
+cd third_party/A8E/jsA8E
+npm run test:automation
+```
+
+### What headless Node.js provides
+
+| Feature | Status |
+|---------|--------|
+| Full automation API (50+ methods) | Yes |
+| ROM / XEX / ATR loading from local files | Yes |
+| Breakpoints, stepping, disassembly | Yes |
+| Memory reads, debug state inspection | Yes |
+| Screenshots (software PNG encoding) | Yes |
+| Snapshots (save / load) | Yes |
+| HostFS (in-memory H: device) | Yes |
+| Built-in 6502 assembler | Yes |
+| Joystick / keyboard / console-key input | Yes |
+| Turbo mode (no frame delay) | Yes |
+| Event subscriptions | Yes |
+
+### What headless Node.js does NOT provide
+
+* No browser DOM — visual inspection requires saving PNGs and viewing them
+  externally.
+* No worker mode — the emulator always runs on the main thread, which is
+  actually more deterministic.
+* HostFS files live in memory only (not persisted to disk by default).
+
+### Why prefer Node.js over the browser path
+
+* **No HTTP server needed.** The browser path requires `python -m http.server`
+  because browsers reject `file://` origins. Node.js reads ROMs and artifacts
+  directly from the filesystem.
+* **No Chrome launch or CDP wiring.** The browser path needs Chrome with
+  `--remote-debugging-port`, `--remote-allow-origins`, a fresh
+  `--user-data-dir`, and WebSocket attachment to the correct tab. Node.js
+  skips all of that.
+* **No cache-busting concerns.** Browser-side runs can serve stale XEX/ATR
+  files unless cache-busting query strings are appended. Node.js always reads
+  the current file from disk.
+* **Deterministic by default.** The headless backend always runs on the main
+  thread, eliminating worker lifecycle ambiguities.
+* **Same API contract.** The grouped surface (`system.*`, `media.*`, `debug.*`,
+  etc.) is identical to the browser's `window.A8EAutomation`.
+
+## Browser-Based Workflow (Advanced / Visual Debugging)
+
+Use the browser path only when you need live visual feedback, the harness UI, or
+when debugging a problem that does not reproduce under headless Node.js.
+
+### Serve the repo root
 
 jsA8E expects HTTP, not `file://`.
 
@@ -29,7 +111,7 @@ Primary URLs:
 * Harness page: `http://127.0.0.1:8765/tools/jsa8e_automation_smoketest.html`
 * Emulator page: `http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html`
 
-## Choose The Right Entry Point
+### Choose the right entry point
 
 Use the harness page when you want the existing Phase 2/3/4 scenario UI and its
 built-in screenshot/artifact collection.
@@ -45,15 +127,7 @@ the emulator page with `?a8e_worker=0` or set
 the main-thread backend while keeping the same public `window.A8EAutomation`
 contract.
 
-## Recommended Chrome Launch
-
-Chrome is installed at:
-
-```text
-C:\Program Files\Google\Chrome\Application\chrome.exe
-```
-
-For direct automation, launch Chrome with remote debugging enabled:
+### Recommended Chrome launch
 
 ```powershell
 & 'C:\Program Files\Google\Chrome\Application\chrome.exe' `
@@ -69,61 +143,43 @@ For direct automation, launch Chrome with remote debugging enabled:
   http://127.0.0.1:8765/third_party/A8E/jsA8E/index.html
 ```
 
-Then attach through the Chrome DevTools Protocol (`/json/list` ->
-`webSocketDebuggerUrl`) and evaluate in the page that owns
-`window.A8EAutomation`.
-
-Two practical notes from recent runs:
+Notes:
 
 * Recent Chrome builds reject the DevTools WebSocket with HTTP 403 unless the
-  launch command includes a matching `--remote-allow-origins=...` flag (or `*`
-  if you explicitly want that).
-* Use a fresh remote-debugging port and/or a fresh `--user-data-dir` for each
-  scripted run when possible. Reusing an older Chrome instance can make CDP
-  attach to the wrong tab or inherit stale origin-policy state.
+  launch command includes a matching `--remote-allow-origins=...` flag.
+* Use a fresh `--user-data-dir` for each scripted run when possible.
 
-## Direct Automation Rules
+## Automation Rules (Both Paths)
 
-When driving jsA8E directly:
-
-1. Wait for `window.A8EAutomation.whenReady()`.
+1. **Node.js:** call `await createHeadlessAutomation(...)` and use the returned
+   `api`. **Browser:** call `await window.A8EAutomation.whenReady()`.
 2. Snapshot the machine with `getSystemState({ timeoutMs: ... })` before each
    run. Treat a returned `error.details.parts` payload as partial state, not as
    a generic hang.
-3. Pause the machine and clear inputs/breakpoints before each run. Worker-backed
-   `start()` / `pause()` / `reset()` now resolve only after the state transition
-   is acknowledged.
-4. Load ROMs explicitly if they are not already present:
-   * `/ATARIXL.ROM`
-   * `/ATARIBAS.ROM`
-5. Prefer `dev.runXexFromUrl("/build/atarixl/....xex")` and
-   `media.mountDiskFromUrl("/build/atarixl/....atr")` over manual fetch-plus-buffer
-   handoff.
-   Do not use `../build/...` from the harness page: the embedded iframe runs at
-   `/third_party/A8E/jsA8E/index.html`, so jsA8E resolves media URLs relative to
-   that location and `../build/...` incorrectly points at `/third_party/A8E/build/...`
-   instead of the repo-root `/build/...` tree.
+3. Pause the machine and clear inputs/breakpoints before each run. `start()`,
+   `pause()`, and `reset()` resolve only after the state transition is
+   acknowledged.
+4. Load ROMs explicitly if they are not already present. Node.js: pass file
+   paths in the `roms` option. Browser: load from URLs.
+5. Prefer `dev.runXexFromUrl(...)` and `media.mountDiskFromUrl(...)` over manual
+   fetch-plus-buffer handoff. In Node.js, use the `fetch` option or load from
+   file with `dev.runXex(...)` / `media.mountDisk(...)`.
 6. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
-   media issues. The progress phases now distinguish resource fetch, media
-   acceptance, loader installation, loader execution, entry-PC success, and
-   timeout/failure phases.
+   media issues.
 7. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` as
-   structured failure bundles, not only as exceptions. They can already include
+   structured failure bundles, not only as exceptions. They include
    `debugState`, `traceTail`, disassembly, console-key state, mounted media,
    and an optional screenshot.
 8. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
-   `debug.runUntilPcOrSnapshot(...)` before writing one-off harness code.
+   `debug.runUntilPcOrSnapshot(...)`.
 9. Use `system.saveSnapshot()` / `system.loadSnapshot()` to preserve expensive
-   bring-up checkpoints. For Atari XL work, the useful restore points are:
+   bring-up checkpoints. Useful restore points:
    * after ROMs are loaded and the machine is idle
    * after the smoke XEX reaches its entry breakpoint
    * after Phase 4 mounts the ATR and before the first GEOS disk call
-   Snapshots are best for repeated mid-run experiments and worker-vs-main-thread
-   comparisons; they are not a substitute for fresh-boot validation.
-10. In headless CDP runs, do not assume the harness query string
+10. Browser-specific: do not assume the harness query string
    (`?scenario=...&autorun=1`) is sufficient evidence that a scenario actually
-   started. Confirm via the harness DOM/log state, or set the scenario and
-   trigger the run explicitly through CDP.
+   started. Confirm via the harness DOM/log state.
 
 ## Snapshot Workflow
 
@@ -137,7 +193,7 @@ Recommended Atari XL checkpoints:
 
 Recommended pattern:
 
-1. boot or reload with cache-busting enabled if needed
+1. boot the headless runtime (or reload the browser with cache-busting)
 2. reach the checkpoint once
 3. `saveSnapshot()` and keep the returned bytes with the matching build id
 4. for each experiment, `loadSnapshot(..., { resume: "saved" })`, apply the
@@ -149,7 +205,6 @@ Use cases where snapshots help:
 
 * repeating Phase 4 SIO or filesystem experiments without replaying the whole
   XEX-entry and disk-mount path
-* comparing worker mode vs `?a8e_worker=0` from the same pre-failure state
 * preserving a known-good Phase 2 or Phase 3 state while Phase 4 code changes
 
 Limits:
@@ -163,11 +218,14 @@ Limits:
 
 ## Per-Scenario Recipes
 
+All recipes below assume either the headless Node.js path or the browser path.
+The API calls are the same; only the setup differs (see above).
+
 ### Phase 2 display
 
 Use:
 
-* XEX: `/build/atarixl/phase2_smoketest.xex`
+* XEX: `build/atarixl/phase2_smoketest.xex`
 * Wait: about `900 ms` real time after start
 * Artifacts:
   * screenshot
@@ -177,7 +235,7 @@ Use:
 Flow:
 
 1. `setBreakpoints([0x0501])`
-2. `runXexFromUrl(...)`
+2. `dev.runXex(...)` (Node.js: pass buffer read from file) or `dev.runXexFromUrl(...)` (browser)
 3. wait for `$0501`
 4. clear breakpoints
 5. `start()`
@@ -217,31 +275,30 @@ Flow:
 
 Use:
 
-* XEX: `/build/atarixl/phase4_disk_smoketest.xex`
-* ATR: `/build/atarixl/phase4_disk_test.atr`
+* XEX: `build/atarixl/phase4_disk_smoketest.xex`
+* ATR: `build/atarixl/phase4_disk_test.atr`
 * Entry breakpoint: `$0881`
 * Marker block: `$04E7-$04F5`
 
 Flow:
 
 1. `setBreakpoints([0x0881])`
-2. `runXexFromUrl("/build/atarixl/phase4_disk_smoketest.xex", { name: "phase4_disk_smoketest.xex", awaitEntry: false, start: true, resetOptions: { portB: 0xFF } })`
+2. `dev.runXex(...)` / `dev.runXexFromUrl(...)` with `{ awaitEntry: false, start: true, resetOptions: { portB: 0xFF } }`
 3. wait for breakpoint at `$0881`
-4. `mountDiskFromUrl("/build/atarixl/phase4_disk_test.atr", { name: "phase4_disk_test.atr", slot: 0 })`
+4. `media.mountDisk(...)` / `media.mountDiskFromUrl(...)` with `{ name: "phase4_disk_test.atr", slot: 0 }`
 5. clear breakpoints
 6. `start()`
 7. `waitForTime({ ms: 1500, clock: "real" })`
 8. `pause()`
 9. `collectArtifacts({ ranges: [{ label: "phase4_markers", start: 0x04e7, length: 0x0f }], traceTailLimit: 32 })`
 
-For Phase 4, this remains a diagnostic and sign-off-prep flow. jsA8E is already a
-real automation surface here, but Altirra is still the sign-off path because the
-browser harness swaps `D1:` after the XEX reaches `$0881` instead of reproducing
-the final boot configuration exactly.
+For Phase 4, this remains a diagnostic and sign-off-prep flow. Altirra is still
+the sign-off path because the smoke harness swaps `D1:` after the XEX reaches
+`$0881` instead of reproducing the final boot configuration exactly.
 
 Before and after the ATR swap, capture `getSystemState({ timeoutMs: ... })` so
 the failure bundle records ROM readiness, mounted media, bank state, and any
-partial worker-read failures alongside the disk markers.
+partial-read failures alongside the disk markers.
 
 ## Known Pitfalls
 
@@ -296,16 +353,15 @@ to pick up fresh scripts.
 For the fastest restart next time:
 
 1. rebuild the needed smoke target
-2. start `python -m http.server 8765`
-3. run `npm run test:automation` in `third_party/A8E/jsA8E` if you need to
-   confirm the current automation layer before debugging GEOS-specific behavior
-4. try the harness page first; it now uses `runXexFromUrl(...)`,
-   `mountDiskFromUrl(...)`, progress events, structured timeout artifacts, and
-   acknowledged worker lifecycle control
-5. if the worker path is suspect, retry the emulator page with `?a8e_worker=0`
-   before changing GEOS code
-6. if Phase 4 still misses `$0881`, keep the emitted progress log and failure
-   bundle before retrying in direct Chrome/CDP
-7. for Phase 4, treat a missed `$0881` breakpoint as a real diagnostic result
+2. run `npm run test:automation` in `third_party/A8E/jsA8E` to confirm the
+   automation layer is healthy
+3. write a short Node.js script using `createHeadlessAutomation(...)` for your
+   specific scenario (Phase 2/3/4 recipe above), or run the per-phase smoke
+   recipe interactively
+4. if you need live visual inspection, start `python -m http.server 8765` and
+   use the browser path
+5. if the browser worker path is suspect, retry the emulator page with
+   `?a8e_worker=0` before changing GEOS code
+6. for Phase 4, treat a missed `$0881` breakpoint as a real diagnostic result
    and keep `debugState`, `traceTail`, disassembly, console-key state, and the
    inferred failure phase before changing code

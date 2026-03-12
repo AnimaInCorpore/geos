@@ -127,15 +127,35 @@ All output will be put into `build/<variant>`.
 
 ## Atari XL Smoke Testing (jsA8E)
 
-jsA8E now exposes a stable browser automation surface at
-`window.A8EAutomation`. For Atari XL bring-up, that makes it useful not only as a
-manual smoke emulator, but also as a repeatable browser-side artifact capture path
-for the Phase 2-4 smoke binaries.
+jsA8E can run as a pure Node.js process — no browser, no HTTP server, no Chrome
+DevTools Protocol. This is the recommended default path for automated smoke
+checks and CI. For a quick-start, per-scenario recipes, and current failure
+modes, see `JSA8E_AUTOMATION.md`.
 
-For a direct Chrome/CDP quick-start, per-scenario recipes, and the current
-jsA8E-specific failure modes, see `JSA8E_AUTOMATION.md`.
+### Headless Node.js (recommended)
 
-Run from repository root:
+```javascript
+const { createHeadlessAutomation } = require("third_party/A8E/jsA8E/headless");
+const runtime = await createHeadlessAutomation({
+  roms: { os: "ATARIXL.ROM", basic: "ATARIBAS.ROM" },
+  turbo: true, frameDelayMs: 0,
+});
+const api = runtime.api;
+// api.system.*, api.media.*, api.debug.*, api.dev.*, api.artifacts.*, ...
+await runtime.dispose();
+```
+
+Run the existing test suite to confirm the automation layer:
+
+    cd third_party/A8E/jsA8E && npm run test:automation
+
+The headless API is the same grouped surface as the browser's
+`window.A8EAutomation` — no code changes needed when moving between paths.
+No external npm dependencies; only Node.js built-ins.
+
+### Browser-based workflow (visual debugging)
+
+Use the browser path only when you need live visual inspection or the harness UI.
 
     python -m http.server 8765
 
@@ -159,42 +179,23 @@ directly to the current Atari bring-up artifacts:
   swap `build/atarixl/phase4_disk_test.atr` into `D1:` at the `$0881` entry
   breakpoint, and collect screenshot, trace, and `PHASE4_*` marker bytes.
 
-The harness now uses jsA8E's URL-native automation entry points:
+The automation API provides URL-native entry points, worker lifecycle
+acknowledgement, partial system-state reads, structured failure bundles, and
+cache-busting fetch controls. Force the main-thread backend with `?a8e_worker=0`
+if worker behavior is suspect.
 
-* `dev.runXexFromUrl(...)`
-* `media.mountDiskFromUrl(...)`
-* `events.subscribe("progress", ...)`
-* structured timeout/failure bundles from `waitForBreakpoint(...)`
+The remaining jsA8E Phase 4 blocker is no longer the old automation deadlock or
+XEX preflight — the rebased smoketest now reaches `$0881` — but the first
+resumed `ReadBlock` still stalls inside Atari OS SIO after the writable ATR is
+swapped into `D1:`.
 
-The current jsA8E automation layer is also more resilient than the earlier
-browser bring-up path: worker-backed `start()` / `pause()` / `reset()` now wait
-for acknowledgement before resolving, `getSystemState({ timeoutMs })` returns
-partial state with structured per-part errors instead of hanging indefinitely,
-and headless/manual debugging can force the main-thread backend with
-`?a8e_worker=0` (or `window.A8E_BOOT_OPTIONS = { worker: false }` before
-`ui.js` runs).
+Use the harness as the browser-side iteration path. Keep Altirra as the sign-off
+emulator for step completion and for any disk-path result that must match the
+intended `D1:` boot configuration exactly.
 
-It also adds cache-busting query strings to Phase 4 XEX/ATR/ROM fetches so the
-browser path always picks up the freshly rebuilt smoketest artifacts instead of
-reusing stale cached copies.
-
-That means the remaining jsA8E Phase 4 blocker is no longer the old automation
-deadlock, XEX preflight, or the entry breakpoint itself. The rebased Phase 4
-smoketest now reaches `$0881` via
-`runXexFromUrl(..., { awaitEntry: false, start: true, resetOptions: { portB: 0xFF } })`,
-but the first resumed `ReadBlock` still stalls later inside Atari OS SIO after
-the writable ATR is swapped into `D1:`.
-
-Use the harness as the primary browser-side automation, iteration, and artifact
-capture path. Keep Altirra as the sign-off emulator for step completion and for
-any disk-path result that must match the intended `D1:` boot configuration
-exactly, because the jsA8E Phase 4 flow still approximates the final setup by
-swapping `D1:` after the XEX reaches `$0881`.
-
-When jsA8E times out, prefer keeping the emitted progress checkpoints and the
-returned failure artifact bundle instead of only saving a screenshot. The newer
-automation API already includes `debugState`, trace tail, disassembly, mounted
-media, console-key state, and optional screenshots in those bundles.
+When jsA8E times out, keep the emitted progress checkpoints and the returned
+failure artifact bundle (debug state, trace tail, disassembly, mounted media,
+console-key state, optional screenshots) instead of only saving a screenshot.
 
 Manual jsA8E fallback:
 
