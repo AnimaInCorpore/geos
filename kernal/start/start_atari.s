@@ -301,6 +301,12 @@ InstallAtariSioBridge:
 	sta SIO_BRIDGE_OS_VECTORS,y
 	dey
 	bpl @snapshotVectors
+	ldy #5
+@snapshotTopVectors:
+	lda $fffa,y
+	sta SIO_BRIDGE_OS_TOP_VECTORS,y
+	dey
+	bpl @snapshotTopVectors
 	lda $0232 ; SSKCTL
 	sta SIO_BRIDGE_SAVED_SSKCTL
 	rts
@@ -331,6 +337,14 @@ SioBridgeTemplate:
 	sta $0200,y
 	dey
 	bpl @swapVectors
+	ldy #5
+@swapTopVectors:
+	lda $fffa,y
+	sta SIO_BRIDGE_SAVED_TOP_VECTORS,y
+	lda SIO_BRIDGE_OS_TOP_VECTORS,y
+	sta $fffa,y
+	dey
+	bpl @swapTopVectors
 	lda SIO_BRIDGE_SAVED_SSKCTL
 	sta $0232 ; SSKCTL
 	sta SKCTL
@@ -349,6 +363,12 @@ SioBridgeTemplate:
 	sta $0200,y
 	dey
 	bpl @restoreVectors
+	ldy #5
+@restoreTopVectors:
+	lda SIO_BRIDGE_SAVED_TOP_VECTORS,y
+	sta $fffa,y
+	dey
+	bpl @restoreTopVectors
 	lda SIO_BRIDGE_SAVED_PORTB
 	sta PORTB
 	lda SIO_BRIDGE_SAVED_PBCTL
