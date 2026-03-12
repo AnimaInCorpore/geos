@@ -358,6 +358,26 @@
 .endmacro
 .macro END_IO_128
 .endmacro
+
+.macro DISABLE_NMI
+	inc nmiDisableDepth
+	lda nmiDisableDepth
+	cmp #$01
+	bne :+
+	lda #$00
+	sta NMIEN
+:
+.endmacro
+
+.macro ENABLE_NMI
+	lda nmiDisableDepth
+	beq :+
+	dec nmiDisableDepth
+	bne :+
+	lda nmiEnableMask
+	sta NMIEN
+:
+.endmacro
 .else
 .macro START_IO
 	PushB CPU_DATA

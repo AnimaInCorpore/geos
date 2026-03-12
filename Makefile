@@ -170,7 +170,9 @@ ifeq ($(VARIANT), atarixl)
 	kernal/hw/hw_atari.s \
 	kernal/irq/irq_atari.s \
 	kernal/keyboard/keyboard_atari.s \
-	kernal/start/start_atari.s
+	kernal/start/vectors_atari.s \
+	kernal/start/start_atari.s \
+	kernal/vars/vars_atari.s
 endif
 
 # code that is in front bank of C128 only
@@ -272,6 +274,7 @@ DRIVER_SOURCES= \
 DEPS= \
 	config.inc \
 	inc/c64.inc \
+	inc/atari.inc \
 	inc/const.inc \
 	inc/diskdrv.inc \
 	inc/geosmac.inc \
@@ -288,6 +291,7 @@ DRIVER_OBJS=$(DRIVER_SOURCES:.s=.o)
 ALL_OBJS=$(KERNAL_OBJS) $(DRIVER_OBJS)
 
 BUILD_DIR=build/$(VARIANT)
+BUILD_FLAGS_FILE=$(BUILD_DIR)/.build-flags
 
 PREFIXED_KERNAL_OBJS = $(addprefix $(BUILD_DIR)/, $(KERNAL_OBJS))
 PREFIXED_KERNAL2_OBJS = $(addprefix $(BUILD_DIR)/, $(KERNAL2_OBJS))
@@ -325,7 +329,7 @@ atarixl-input-smoketest:
 	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari INPUTCFG=input/inputdrv_atarixl_smoketest.cfg EXTRA_ASFLAGS='-D atarixl_input_smoketest=1' build/atarixl/phase3_input_smoketest.xex
 
 atarixl-disk-smoketest:
-	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_disk_smoketest=1' build/atarixl/phase4_disk_smoketest.xex
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_disk_smoketest=1' build/atarixl/phase4_disk_smoketest.xex build/atarixl/phase4_disk_test.atr
 
 regress:
 	@echo "********** Building variant 'bsw'"
@@ -355,7 +359,7 @@ else
 ifeq ($(VARIANT),atarixl)
 $(BUILD_DIR)/$(ATR_RESULT): $(BUILD_DIR)/kernal_combined.prg $(ATARI_DISK_TOOL) $(ATARIXL_CVT_FILES)
 	@echo Creating $@
-	python $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@ $(ATARIXL_CVT_FILES)
+	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@ $(ATARIXL_CVT_FILES)
 else
 $(BUILD_DIR)/$(D64_RESULT): $(BUILD_DIR)/kernal_compressed.prg
 	@if [ -e $(D64_TEMPLATE) ]; then \
@@ -461,7 +465,19 @@ $(BUILD_DIR)/input/koalapad.bin: $(BUILD_DIR)/input/koalapad.o $(INPUTCFG) $(DEP
 $(BUILD_DIR)/input/pcanalog.bin: $(BUILD_DIR)/input/pcanalog.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/pcanalog.o -o $@
 
-$(BUILD_DIR)/%.o: %.s
+$(BUILD_FLAGS_FILE): Makefile
+	@mkdir -p $$(dirname $@)
+	@printf '%s\n' \
+		'VARIANT=$(VARIANT)' \
+		'DRIVE=$(DRIVE)' \
+		'INPUT=$(INPUT)' \
+		'INPUTCFG=$(INPUTCFG)' \
+		'EXTRA_ASFLAGS=$(EXTRA_ASFLAGS)' \
+		'ASFLAGS=$(ASFLAGS)' > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+
+$(BUILD_DIR)/%.o: %.s $(DEPS) $(BUILD_FLAGS_FILE)
 	@mkdir -p `dirname $@`
 	$(AS) -D $(VARIANT)=1 -D $(DRIVE)=1 -D $(INPUT)=1 $(ASFLAGS) $< -o $@
 
@@ -514,25 +530,32 @@ $(BUILD_DIR)/phase3_input_smoketest.xex: $(BUILD_DIR)/kernal/phase3_input_smoket
 	dd if=$(BUILD_DIR)/input/$(INPUT).bin bs=1 count=384 >> $@ 2> /dev/null
 	printf "\xE0\x02\xE1\x02\x01\x05" >> $@
 
-$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin: $(PREFIXED_KERNAL_OBJS) kernal/kernal_atarixl_smoketest.cfg
+$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin: $(PREFIXED_KERNAL_OBJS) kernal/kernal_atarixl_phase4_smoketest.cfg
 	@mkdir -p $$(dirname $@)
-	$(LD) -C kernal/kernal_atarixl_smoketest.cfg $(PREFIXED_KERNAL_OBJS) -o $@ -m $(BUILD_DIR)/kernal/phase4_disk_smoketest.map -Ln $(BUILD_DIR)/kernal/phase4_disk_smoketest.lab
+	$(LD) -C kernal/kernal_atarixl_phase4_smoketest.cfg $(PREFIXED_KERNAL_OBJS) -o $@ -m $(BUILD_DIR)/kernal/phase4_disk_smoketest.map -Ln $(BUILD_DIR)/kernal/phase4_disk_smoketest.lab
 
 $(BUILD_DIR)/phase4_disk_smoketest.xex: $(BUILD_DIR)/kernal/phase4_disk_smoketest.bin $(BUILD_DIR)/drv/$(DRIVE).bin tools/phase4_disk_smoketest.atdbg
 	@echo Creating $@
 	printf "\xFF\xFF" > $@
-	printf "\x00\x05\xFF\x1F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 count=6912 >> $@ 2> /dev/null
-	printf "\x00\x20\xFF\x5F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=7744 count=16384 >> $@ 2> /dev/null
+	printf "\x80\x08\xFF\x1F" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 count=6016 >> $@ 2> /dev/null
+	printf "\x00\x20\xFF\x4F" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6848 count=12288 >> $@ 2> /dev/null
+	printf "\x00\x58\xFF\x67" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=19136 count=4090 >> $@ 2> /dev/null
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=35514 count=6 >> $@ 2> /dev/null
 	printf "\x00\x90\x7F\x9D" >> $@
 	cat $(BUILD_DIR)/drv/$(DRIVE).bin /dev/zero | dd bs=1 count=3456 >> $@ 2> /dev/null
 	printf "\x80\x9D\xFF\x9F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6912 count=640 >> $@ 2> /dev/null
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6016 count=640 >> $@ 2> /dev/null
 	printf "\x40\x3F\xFF\x3F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=7552 count=192 >> $@ 2> /dev/null
-	printf "\xE0\x02\xE1\x02\x01\x05" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6656 count=192 >> $@ 2> /dev/null
+	printf "\xE0\x02\xE1\x02\x81\x08" >> $@
 	cp tools/phase4_disk_smoketest.atdbg $(BUILD_DIR)/phase4_disk_smoketest.xex.atdbg
+
+$(BUILD_DIR)/phase4_disk_test.atr: $(ATARI_DISK_TOOL)
+	@echo Creating $@
+	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@
 endif
 
 $(BUILD_DIR)/kernal/kernal2.bin: $(PREFIXED_KERNAL2_OBJS) kernal/kernal2_$(VARIANT).cfg

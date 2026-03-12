@@ -39,6 +39,12 @@ when the harness is failing before it reaches the real emulator work. Direct
 automation now has feature parity with the harness on media loading because
 jsA8E exposes URL-native `runXexFromUrl(...)` and `mountDiskFromUrl(...)`.
 
+If worker-backed automation is the variable you are trying to eliminate, boot
+the emulator page with `?a8e_worker=0` or set
+`window.A8E_BOOT_OPTIONS = { worker: false }` before `ui.js` runs. That forces
+the main-thread backend while keeping the same public `window.A8EAutomation`
+contract.
+
 ## Recommended Chrome Launch
 
 Chrome is installed at:
@@ -81,31 +87,79 @@ Two practical notes from recent runs:
 When driving jsA8E directly:
 
 1. Wait for `window.A8EAutomation.whenReady()`.
-2. Pause the machine and clear inputs/breakpoints before each run.
-3. Load ROMs explicitly if they are not already present:
+2. Snapshot the machine with `getSystemState({ timeoutMs: ... })` before each
+   run. Treat a returned `error.details.parts` payload as partial state, not as
+   a generic hang.
+3. Pause the machine and clear inputs/breakpoints before each run. Worker-backed
+   `start()` / `pause()` / `reset()` now resolve only after the state transition
+   is acknowledged.
+4. Load ROMs explicitly if they are not already present:
    * `/ATARIXL.ROM`
    * `/ATARIBAS.ROM`
-4. Prefer `dev.runXexFromUrl("/build/atarixl/....xex")` and
+5. Prefer `dev.runXexFromUrl("/build/atarixl/....xex")` and
    `media.mountDiskFromUrl("/build/atarixl/....atr")` over manual fetch-plus-buffer
    handoff.
    Do not use `../build/...` from the harness page: the embedded iframe runs at
    `/third_party/A8E/jsA8E/index.html`, so jsA8E resolves media URLs relative to
    that location and `../build/...` incorrectly points at `/third_party/A8E/build/...`
    instead of the repo-root `/build/...` tree.
-5. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
+6. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
    media issues. The progress phases now distinguish resource fetch, media
    acceptance, loader installation, loader execution, entry-PC success, and
    timeout/failure phases.
-6. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` as
+7. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` as
    structured failure bundles, not only as exceptions. They can already include
    `debugState`, `traceTail`, disassembly, console-key state, mounted media,
    and an optional screenshot.
-7. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
+8. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
    `debug.runUntilPcOrSnapshot(...)` before writing one-off harness code.
-8. In headless CDP runs, do not assume the harness query string
+9. Use `system.saveSnapshot()` / `system.loadSnapshot()` to preserve expensive
+   bring-up checkpoints. For Atari XL work, the useful restore points are:
+   * after ROMs are loaded and the machine is idle
+   * after the smoke XEX reaches its entry breakpoint
+   * after Phase 4 mounts the ATR and before the first GEOS disk call
+   Snapshots are best for repeated mid-run experiments and worker-vs-main-thread
+   comparisons; they are not a substitute for fresh-boot validation.
+10. In headless CDP runs, do not assume the harness query string
    (`?scenario=...&autorun=1`) is sufficient evidence that a scenario actually
    started. Confirm via the harness DOM/log state, or set the scenario and
    trigger the run explicitly through CDP.
+
+## Snapshot Workflow
+
+Use snapshots to shorten the debug loop, not to replace it.
+
+Recommended Atari XL checkpoints:
+
+* clean machine after ROM load and before the smoke artifact runs
+* smoke-entry breakpoint reached (`$0501` for Phase 2/3, `$0881` for Phase 4)
+* Phase 4 with the writable ATR mounted and the machine still paused
+
+Recommended pattern:
+
+1. boot or reload with cache-busting enabled if needed
+2. reach the checkpoint once
+3. `saveSnapshot()` and keep the returned bytes with the matching build id
+4. for each experiment, `loadSnapshot(..., { resume: "saved" })`, apply the
+   one variable you want to test, then collect artifacts on stop/failure
+5. after a candidate fix, rerun the same scenario from a fresh boot before
+   treating it as real progress
+
+Use cases where snapshots help:
+
+* repeating Phase 4 SIO or filesystem experiments without replaying the whole
+  XEX-entry and disk-mount path
+* comparing worker mode vs `?a8e_worker=0` from the same pre-failure state
+* preserving a known-good Phase 2 or Phase 3 state while Phase 4 code changes
+
+Limits:
+
+* snapshot restore skips parts of reset and boot ordering, so it can hide
+  startup bugs
+* cartridge cold-boot work for Phase 5 sign-off still needs fresh emulator boot
+  and later hardware validation
+* do not promote a fix based only on snapshot replay; always confirm with a
+  clean run
 
 ## Per-Scenario Recipes
 
@@ -165,14 +219,14 @@ Use:
 
 * XEX: `/build/atarixl/phase4_disk_smoketest.xex`
 * ATR: `/build/atarixl/phase4_disk_test.atr`
-* Entry breakpoint: `$0501`
+* Entry breakpoint: `$0881`
 * Marker block: `$04E7-$04F5`
 
 Flow:
 
-1. `setBreakpoints([0x0501])`
-2. `runXexFromUrl(...)`
-3. wait for breakpoint at `$0501`
+1. `setBreakpoints([0x0881])`
+2. `runXexFromUrl("/build/atarixl/phase4_disk_smoketest.xex", { name: "phase4_disk_smoketest.xex", awaitEntry: false, start: true, resetOptions: { portB: 0xFF } })`
+3. wait for breakpoint at `$0881`
 4. `mountDiskFromUrl("/build/atarixl/phase4_disk_test.atr", { name: "phase4_disk_test.atr", slot: 0 })`
 5. clear breakpoints
 6. `start()`
@@ -182,14 +236,18 @@ Flow:
 
 For Phase 4, this remains a diagnostic and sign-off-prep flow. jsA8E is already a
 real automation surface here, but Altirra is still the sign-off path because the
-browser harness swaps `D1:` after the XEX reaches `$0501` instead of reproducing
+browser harness swaps `D1:` after the XEX reaches `$0881` instead of reproducing
 the final boot configuration exactly.
+
+Before and after the ATR swap, capture `getSystemState({ timeoutMs: ... })` so
+the failure bundle records ROM readiness, mounted media, bank state, and any
+partial worker-read failures alongside the disk markers.
 
 ## Known Pitfalls
 
 ### Phase 4 current jsA8E state
 
-As of 2026-03-10, jsA8E has the newer automation surface upstream:
+As of 2026-03-11, jsA8E has the newer automation surface upstream:
 
 * `runXexFromUrl(...)`
 * `mountDiskFromUrl(...)`
@@ -199,30 +257,29 @@ As of 2026-03-10, jsA8E has the newer automation surface upstream:
 * structured timeout bundles from `waitForPc()` / `waitForBreakpoint()`
 
 That means the harness and the direct emulator page can both use the same
-URL-native media path. The remaining Phase 4 problem is no longer media
-transport. A Phase 4 jsA8E run still does not reach the expected `$0501` entry
-breakpoint within 15 seconds. The machine settles in a loop around `$5059-$505E`:
+URL-native media path. The earlier automation deadlocks are no longer the main
+problem: worker lifecycle calls acknowledge completion, `getSystemState()`
+degrades into partial-state errors instead of hanging, and the same API can be
+forced into main-thread mode for deterministic fallback. The remaining Phase 4
+problem is later in disk/runtime behavior, not media transport or XEX preflight.
+A Phase 4 jsA8E run now reaches the rebased `$0881` entry breakpoint when
+launched with `awaitEntry: false`, `start: true`, and a reset-time `PORTB=$FF`
+override, then stalls after the writable ATR is swapped into `D1:` and the
+first `ReadBlock` starts.
 
-```text
-$5059  LDA $D01F
-$505C  AND #$01
-$505E  BNE $5059
-```
+The browser harness now appends a cache-busting query to `runXexFromUrl(...)`,
+`mountDiskFromUrl(...)`, and ROM fetches. Without that, Chrome/jsA8E can keep
+serving a stale Phase 4 XEX and report the old `$0500-$1FFF` preflight overlap
+even after the rebuilt `$0880-$1FFF` image exists on disk.
 
-At that point:
+The current observed marker/data state after resuming from `$0881` in a successful run:
 
-* `D1:` is still not mounted
-* no `PHASE4_*` markers are available yet
-* `bankState.portB` is a high-value clue and should be captured with the failure
-  bundle. In this session the timeout state showed `PORTB=$7F`, which is
-  consistent with XL self-test ROM being visible at `$5000-$57FF` instead of RAM.
-* useful follow-up artifacts are:
-  * the structured failure bundle from `waitForBreakpoint(...)`
-  * paused `debugState`
-  * `traceTail`
-  * disassembly around the current PC
-  * console-key state
-  * progress-event history from the failed run
+* `PHASE4_STAGE=$01`
+* `PHASE4_STATUS=$67` (ReadBlock success)
+* `PHASE4_ERROR=$00`
+* `PHASE4_RESULTS=$01` (Pass Dir)
+
+The earlier SIO stall (stuck at `$66`) was resolved by the updated low-RAM SIO bridge in `kernal/start/start_atari.s`, which now enables NMIs (`NMIEN=$40`) and restores OS VBI vectors during the `SIOV` call. This allows OS timers to increment, enabling `SIOV` to complete and return.
 
 ### Cache-busting reload
 
@@ -240,10 +297,15 @@ For the fastest restart next time:
 
 1. rebuild the needed smoke target
 2. start `python -m http.server 8765`
-3. try the harness page first; it now uses `runXexFromUrl(...)`,
-   `mountDiskFromUrl(...)`, progress events, and structured timeout artifacts
-4. if Phase 4 still misses `$0501`, keep the emitted progress log and failure
+3. run `npm run test:automation` in `third_party/A8E/jsA8E` if you need to
+   confirm the current automation layer before debugging GEOS-specific behavior
+4. try the harness page first; it now uses `runXexFromUrl(...)`,
+   `mountDiskFromUrl(...)`, progress events, structured timeout artifacts, and
+   acknowledged worker lifecycle control
+5. if the worker path is suspect, retry the emulator page with `?a8e_worker=0`
+   before changing GEOS code
+6. if Phase 4 still misses `$0881`, keep the emitted progress log and failure
    bundle before retrying in direct Chrome/CDP
-5. for Phase 4, treat a missed `$0501` breakpoint as a real diagnostic result
+7. for Phase 4, treat a missed `$0881` breakpoint as a real diagnostic result
    and keep `debugState`, `traceTail`, disassembly, console-key state, and the
    inferred failure phase before changing code

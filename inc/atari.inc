@@ -11,23 +11,35 @@ HPOSP0   = $D000 ; Player 0 horizontal position (write)
 HPOSP1   = $D001
 HPOSP2   = $D002
 HPOSP3   = $D003
-HPOSM0   = $D004 ; Missile 0 horizontal position
+HPOSM0   = $D004 ; Missile 0 horizontal position (write)
+HPOSM1   = $D005
+HPOSM2   = $D006
+HPOSM3   = $D007
 SIZEP0   = $D008 ; Player 0 size
 SIZEP1   = $D009
 SIZEP2   = $D00A
 SIZEP3   = $D00B
+SIZEM    = $D00C ; Missile size (write)
 GRAFP0_W = $D00D ; Player 0 graphics data (write)
 GRAFP1_W = $D00E
 GRAFP2_W = $D00F
 GRAFP3_W = $D010
+GRAFM_W  = $D011 ; Missile graphics data (write) — read alias at same addr is TRIG1_R
 TRIG0_R  = $D010 ; Joystick 0 trigger (read, active low: 0=pressed)
 TRIG1_R  = $D011 ; Joystick 1 trigger (read, active low)
+TRIG2_R  = $D012 ; Joystick 2 trigger / light-gun trigger (read, active low)
+TRIG3_R  = $D013 ; Joystick 3 trigger / light-gun trigger (read, active low)
+PAL_R    = $D014 ; Hardware video standard (read): bit3=0 → PAL, bit3=1 → NTSC
+                  ; (write at $D014 is COLPM2 — unrelated register)
 GRAFP0   = GRAFP0_W
 GRAFP1   = GRAFP1_W
 GRAFP2   = GRAFP2_W
 GRAFP3   = GRAFP3_W
+GRAFM    = GRAFM_W
 TRIG0    = TRIG0_R
 TRIG1    = TRIG1_R
+TRIG2    = TRIG2_R
+TRIG3    = TRIG3_R
 COLPM0   = $D012 ; Player 0 color
 COLPM1   = $D013
 COLPM2   = $D014
@@ -71,6 +83,10 @@ AUDC3_W   = $D205
 AUDF4_W   = $D206
 AUDC4_W   = $D207
 AUDCTL_W  = $D208 ; Audio control (write)
+STIMER_W  = $D209 ; Write: start POKEY timers (read alias at same addr is KBCODE)
+SKRES_W   = $D20A ; Write: reset SKSTAT error bits (read alias is RANDOM)
+SEROUT_W  = $D20D ; Serial output data (write)
+SERIN_R   = $D20D ; Serial input data (read)
 IRQEN_W   = $D20E ; IRQ enable mask (write)
 IRQST_R   = $D20E ; IRQ status (read, active-low bits)
 SKSTAT_R  = $D20F ; Serial/keyboard status (bit2=0 key down, bit3=0 shift down)
@@ -134,5 +150,23 @@ XITVBV   = $E462 ; OS: VBI exit (XL/XE ROM)
 VVBLKI   = $0222 ; Immediate VBI vector (2-byte pointer, OS-managed)
 VVBLKD   = $0224 ; Deferred VBI vector (2-byte pointer, OS-managed)
 RTCLOK   = $0012 ; 3-byte real-time clock incremented each VBI ($12/$13/$14)
+CDTMV1   = $0218 ; 16-bit countdown timer 1, lo byte first; decremented each VBI
+CDTMV2   = $021A ; 16-bit countdown timer 2
+CDTMV3   = $021C ; 16-bit countdown timer 3
+CDTMV4   = $021E ; 16-bit countdown timer 4
+CDTMV5   = $0220 ; 16-bit countdown timer 5 — SIOV uses this for read/write timeouts
 CH       = $02FC ; OS keyboard shadow: $FF = no key pending, else ATASCII code
 KEYREP   = $02DA ; OS keyboard repeat counter
+
+; Low-RAM ROM-banking bridge for OS-assisted SIO calls.
+; Keep the code and scratch below $3F40 so it does not overlap icon data.
+SIO_BRIDGE_BASE        = $3E00
+SIO_BRIDGE_SAVED_NMIEN = SIO_BRIDGE_BASE + $A0
+SIO_BRIDGE_SAVED_PBCTL = SIO_BRIDGE_BASE + $A1
+SIO_BRIDGE_SAVED_PORTB = SIO_BRIDGE_BASE + $A2
+SIO_BRIDGE_SAVED_A     = SIO_BRIDGE_BASE + $A3
+SIO_BRIDGE_SAVED_Y     = SIO_BRIDGE_BASE + $A4
+SIO_BRIDGE_SAVED_SSKCTL = SIO_BRIDGE_BASE + $A5
+SIO_BRIDGE_OS_WORKSPACE = SIO_BRIDGE_BASE + $A6 ; 6 bytes: $023A-$023F
+SIO_BRIDGE_OS_VECTORS  = SIO_BRIDGE_BASE + $B0 ; 38 bytes: $0200-$0225
+SIO_BRIDGE_SAVED_VECTORS = SIO_BRIDGE_BASE + $D6 ; 38 bytes: $0200-$0225

@@ -156,7 +156,7 @@ directly to the current Atari bring-up artifacts:
   screenshots.
 * Phase 4 disk diagnostics: build `make atarixl-disk-smoketest`, then run the
   `Phase 4 disk` scenario to boot `build/atarixl/phase4_disk_smoketest.xex`,
-  swap `build/atarixl/phase4_disk_test.atr` into `D1:` at the `$0501` entry
+  swap `build/atarixl/phase4_disk_test.atr` into `D1:` at the `$0881` entry
   breakpoint, and collect screenshot, trace, and `PHASE4_*` marker bytes.
 
 The harness now uses jsA8E's URL-native automation entry points:
@@ -166,15 +166,30 @@ The harness now uses jsA8E's URL-native automation entry points:
 * `events.subscribe("progress", ...)`
 * structured timeout/failure bundles from `waitForBreakpoint(...)`
 
-That means the remaining jsA8E Phase 4 blocker is the real pre-entry `$0501`
-loader timeout described in `JSA8E_AUTOMATION.md`, not the older binary-transport
-failure path.
+The current jsA8E automation layer is also more resilient than the earlier
+browser bring-up path: worker-backed `start()` / `pause()` / `reset()` now wait
+for acknowledgement before resolving, `getSystemState({ timeoutMs })` returns
+partial state with structured per-part errors instead of hanging indefinitely,
+and headless/manual debugging can force the main-thread backend with
+`?a8e_worker=0` (or `window.A8E_BOOT_OPTIONS = { worker: false }` before
+`ui.js` runs).
+
+It also adds cache-busting query strings to Phase 4 XEX/ATR/ROM fetches so the
+browser path always picks up the freshly rebuilt smoketest artifacts instead of
+reusing stale cached copies.
+
+That means the remaining jsA8E Phase 4 blocker is no longer the old automation
+deadlock, XEX preflight, or the entry breakpoint itself. The rebased Phase 4
+smoketest now reaches `$0881` via
+`runXexFromUrl(..., { awaitEntry: false, start: true, resetOptions: { portB: 0xFF } })`,
+but the first resumed `ReadBlock` still stalls later inside Atari OS SIO after
+the writable ATR is swapped into `D1:`.
 
 Use the harness as the primary browser-side automation, iteration, and artifact
 capture path. Keep Altirra as the sign-off emulator for step completion and for
 any disk-path result that must match the intended `D1:` boot configuration
 exactly, because the jsA8E Phase 4 flow still approximates the final setup by
-swapping `D1:` after the XEX reaches `$0501`.
+swapping `D1:` after the XEX reaches `$0881`.
 
 When jsA8E times out, prefer keeping the emitted progress checkpoints and the
 returned failure artifact bundle instead of only saving a screenshot. The newer

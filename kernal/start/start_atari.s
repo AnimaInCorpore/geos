@@ -33,6 +33,8 @@
 .import i_FillRam
 .import InitAtariDisplay
 .import InitAtariIRQ
+.import _NMIHandler
+.import _IRQVectorHandler
 .import _HorizontalLine
 .import _Rectangle
 .import _SetPattern
@@ -76,6 +78,12 @@ PHASE4_DIRNAME0    = $04f2
 PHASE4_DIRNAME1    = $04f3
 PHASE4_DIRNAME2    = $04f4
 PHASE4_DIRNAME3    = $04f5
+PHASE4_SIOY        = $04f6
+PHASE4_SIODST      = $04f7
+PHASE4_SIOSECL     = $04f8
+PHASE4_SIOSECH     = $04f9
+PHASE4_SIOCMD      = $04fa
+PHASE4_SIORETA     = $04fb
 
 PHASE4_STAGE_PRE_OPEN  = 1
 PHASE4_STAGE_POST_OPEN = 2
@@ -97,7 +105,8 @@ PHASE4_SMALL_DST   = BACK_SCR_BASE + $0400
 PHASE4_FILL_SRC    = BACK_SCR_BASE + $0800
 PHASE4_SMALL_LEN   = 600
 PHASE4_FILL_LEN    = 4096
-PHASE4_KERNAL_SRC  = $2000
+PHASE4_KERNAL_SRC0 = $2000
+PHASE4_KERNAL_SRC1 = $5800
 PHASE4_VARS_BASE   = $86c0
 PHASE4_VARS_SIZE   = $0940
 .endif
@@ -109,6 +118,7 @@ _ResetHandle:
 	txs
 
 .ifdef atarixl_disk_smoketest
+	jsr InstallAtariSioBridge
 	jmp Phase4SmokeRun
 @smokeLoop:
 	jmp @smokeLoop
@@ -128,9 +138,26 @@ _ResetHandle:
 	jmp @smokeLoop
 .endif
 
+	; Snapshot OS vectors while OS ROM is still active, then disable OS ROM so
+	; the GEOS kernal at $C000-$FFFF becomes visible.  All kernal calls (Init*,
+	; i_FillRam, …) must come AFTER this pair; they live at $C100+ and would
+	; hit OS ROM code if called before the disable.
+	jsr InstallAtariSioBridge
+	jsr InstallDisableRomStub
+	jsr $0300 ; Call the stub at its RAM location — OS ROM now off
+
 	; Phase 2 bring-up: ANTIC mode $0F display list and GTIA palette.
 	jsr InitAtariDisplay
 	jsr InitAtariKeyboard
+
+	; Zero interrupt dispatch vectors before enabling Mode B NMI.  _NMIHandler
+	; will fire as soon as NMIEN is written by InitAtariIRQ; CallRoutine must
+	; see null vectors rather than uninitialized RAM until FirstInit runs.
+	lda #0
+	sta intTopVector
+	sta intTopVector+1
+	sta intBotVector
+	sta intBotVector+1
 	jsr InitAtariIRQ
 
 	jsr i_FillRam
@@ -239,7 +266,100 @@ InitAtariKeyboard:
 	sta SKCTL
 	lda #$03
 	sta SKCTL
+	sta $0232 ; SSKCTL shadow used by the OS SIO path
+	sta SIO_BRIDGE_SAVED_SSKCTL
 	rts
+
+InstallDisableRomStub:
+	ldy #0
+@copy:
+	lda DisableRomStubTemplate,y
+	sta $0300,y
+	iny
+	cpy #(DisableRomStubTemplateEnd-DisableRomStubTemplate)
+	bne @copy
+	rts
+
+DisableRomStubTemplate:
+	lda PORTB
+	and #$fe
+	sta PORTB
+	rts
+DisableRomStubTemplateEnd:
+
+InstallAtariSioBridge:
+	ldy #0
+@copy:
+	lda SioBridgeTemplate,y
+	sta SIO_BRIDGE_BASE,y
+	iny
+	cpy #(SioBridgeTemplateEnd-SioBridgeTemplate)
+	bne @copy
+	ldy #37
+@snapshotVectors:
+	lda $0200,y
+	sta SIO_BRIDGE_OS_VECTORS,y
+	dey
+	bpl @snapshotVectors
+	lda $0232 ; SSKCTL
+	sta SIO_BRIDGE_SAVED_SSKCTL
+	rts
+
+; Runs from low RAM so the driver can bank OS ROM in for SIOV without
+; executing out from underneath the high kernal mapping.
+SioBridgeTemplate:
+	php
+	sei
+	lda NMIEN
+	sta SIO_BRIDGE_SAVED_NMIEN
+	lda PBCTL
+	sta SIO_BRIDGE_SAVED_PBCTL
+	lda #$3c
+	sta PBCTL
+	lda PORTB
+	sta SIO_BRIDGE_SAVED_PORTB
+	lda #$00
+	sta NMIEN
+	lda SIO_BRIDGE_SAVED_PORTB  ; reload — previous lda #$00 clobbered A
+	ora #$83                    ; force OS ROM active, BASIC off, self-test off
+	sta PORTB
+	ldy #37
+@swapVectors:
+	lda $0200,y
+	sta SIO_BRIDGE_SAVED_VECTORS,y
+	lda SIO_BRIDGE_OS_VECTORS,y
+	sta $0200,y
+	dey
+	bpl @swapVectors
+	lda SIO_BRIDGE_SAVED_SSKCTL
+	sta $0232 ; SSKCTL
+	sta SKCTL
+	lda #$40
+	sta NMIEN
+	cli
+	jsr SIOV
+	sei
+	sta SIO_BRIDGE_SAVED_A
+	sty SIO_BRIDGE_SAVED_Y
+	lda #$00
+	sta NMIEN
+	ldy #37
+@restoreVectors:
+	lda SIO_BRIDGE_SAVED_VECTORS,y
+	sta $0200,y
+	dey
+	bpl @restoreVectors
+	lda SIO_BRIDGE_SAVED_PORTB
+	sta PORTB
+	lda SIO_BRIDGE_SAVED_PBCTL
+	sta PBCTL
+	lda SIO_BRIDGE_SAVED_NMIEN
+	sta NMIEN
+	ldy SIO_BRIDGE_SAVED_Y
+	lda SIO_BRIDGE_SAVED_A
+	plp
+	rts
+SioBridgeTemplateEnd:
 
 .ifdef atarixl_disk_smoketest
 Phase4SmokeRun:
@@ -257,6 +377,7 @@ Phase4SmokeRun:
 	lda PORTB
 	ora #$80
 	sta PORTB
+	jsr InitAtariKeyboard
 
 	; The smoketest XEX does not carry the BSS/VARS area, so clear it explicitly
 	; before invoking GEOS file-system routines that depend on those buffers.
@@ -280,6 +401,12 @@ Phase4SmokeRun:
 	sta PHASE4_DIRNAME1
 	sta PHASE4_DIRNAME2
 	sta PHASE4_DIRNAME3
+	sta PHASE4_SIOY
+	sta PHASE4_SIODST
+	sta PHASE4_SIOSECL
+	sta PHASE4_SIOSECH
+	sta PHASE4_SIOCMD
+	sta PHASE4_SIORETA
 
 	LoadB NUMDRV, 1
 	LoadB curDrive, 8
@@ -300,6 +427,7 @@ Phase4SmokeRun:
 	and #$fe
 	sta PORTB
 	jsr Phase4InstallHighKernal
+	jsr Phase4InstallRamVectors
 
 	jsr Phase4FillSmallSource
 	jsr Phase4FillLargeSource
@@ -385,9 +513,9 @@ Phase4MarkFullPass:
 
 ; Install the staged $C000-$FFFF image from conventional RAM after ROM is disabled.
 Phase4InstallHighKernal:
-	LoadW r0, PHASE4_KERNAL_SRC
+	LoadW r0, PHASE4_KERNAL_SRC0
 	LoadW r1, $c000
-	ldx #$40
+	ldx #$30
 @page:
 	ldy #0
 @byte:
@@ -399,6 +527,35 @@ Phase4InstallHighKernal:
 	inc r1H
 	dex
 	bne @page
+	LoadW r0, PHASE4_KERNAL_SRC1
+	LoadW r1, $f000
+	ldx #$10
+@page1:
+	ldy #0
+@byte1:
+	lda (r0),y
+	sta (r1),y
+	iny
+	bne @byte1
+	inc r0H
+	inc r1H
+	dex
+	bne @page1
+	rts
+
+Phase4InstallRamVectors:
+	lda #<_NMIHandler
+	sta $fffa
+	lda #>_NMIHandler
+	sta $fffb
+	lda #<_ResetHandle
+	sta $fffc
+	lda #>_ResetHandle
+	sta $fffd
+	lda #<_IRQVectorHandler
+	sta $fffe
+	lda #>_IRQVectorHandler
+	sta $ffff
 	rts
 
 Phase4FillSmallSource:
