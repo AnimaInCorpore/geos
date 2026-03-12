@@ -295,12 +295,12 @@ InstallAtariSioBridge:
 	iny
 	cpy #(SioBridgeTemplateEnd-SioBridgeTemplate)
 	bne @copy
-	ldy #37
-@snapshotVectors:
-	lda $0200,y
-	sta SIO_BRIDGE_OS_VECTORS,y
+	ldy #3
+@snapshotVbiVectors:
+	lda VVBLKI,y
+	sta SIO_BRIDGE_OS_VBI_VECTORS,y
 	dey
-	bpl @snapshotVectors
+	bpl @snapshotVbiVectors
 	ldy #5
 @snapshotTopVectors:
 	lda $fffa,y
@@ -330,9 +330,20 @@ SioBridgeTemplate:
 	ora #$83                    ; force OS ROM active, BASIC off, self-test off
 	sta PORTB
 	ldy #37
-@swapVectors:
+@prepareVectors:
 	lda $0200,y
 	sta SIO_BRIDGE_SAVED_VECTORS,y
+	sta SIO_BRIDGE_OS_VECTORS,y
+	dey
+	bpl @prepareVectors
+	ldy #3
+@patchVbiVectors:
+	lda SIO_BRIDGE_OS_VBI_VECTORS,y
+	sta SIO_BRIDGE_OS_VECTORS+(VVBLKI-$0200),y
+	dey
+	bpl @patchVbiVectors
+	ldy #37
+@swapVectors:
 	lda SIO_BRIDGE_OS_VECTORS,y
 	sta $0200,y
 	dey
