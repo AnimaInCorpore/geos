@@ -274,6 +274,7 @@ DRIVER_SOURCES= \
 DEPS= \
 	config.inc \
 	inc/c64.inc \
+	inc/atari.inc \
 	inc/const.inc \
 	inc/diskdrv.inc \
 	inc/geosmac.inc \
@@ -290,6 +291,7 @@ DRIVER_OBJS=$(DRIVER_SOURCES:.s=.o)
 ALL_OBJS=$(KERNAL_OBJS) $(DRIVER_OBJS)
 
 BUILD_DIR=build/$(VARIANT)
+BUILD_FLAGS_FILE=$(BUILD_DIR)/.build-flags
 
 PREFIXED_KERNAL_OBJS = $(addprefix $(BUILD_DIR)/, $(KERNAL_OBJS))
 PREFIXED_KERNAL2_OBJS = $(addprefix $(BUILD_DIR)/, $(KERNAL2_OBJS))
@@ -463,7 +465,19 @@ $(BUILD_DIR)/input/koalapad.bin: $(BUILD_DIR)/input/koalapad.o $(INPUTCFG) $(DEP
 $(BUILD_DIR)/input/pcanalog.bin: $(BUILD_DIR)/input/pcanalog.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/pcanalog.o -o $@
 
-$(BUILD_DIR)/%.o: %.s
+$(BUILD_FLAGS_FILE): Makefile
+	@mkdir -p $$(dirname $@)
+	@printf '%s\n' \
+		'VARIANT=$(VARIANT)' \
+		'DRIVE=$(DRIVE)' \
+		'INPUT=$(INPUT)' \
+		'INPUTCFG=$(INPUTCFG)' \
+		'EXTRA_ASFLAGS=$(EXTRA_ASFLAGS)' \
+		'ASFLAGS=$(ASFLAGS)' > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+
+$(BUILD_DIR)/%.o: %.s $(DEPS) $(BUILD_FLAGS_FILE)
 	@mkdir -p `dirname $@`
 	$(AS) -D $(VARIANT)=1 -D $(DRIVE)=1 -D $(INPUT)=1 $(ASFLAGS) $< -o $@
 
