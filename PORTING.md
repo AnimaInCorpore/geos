@@ -70,7 +70,7 @@ $9D80–$9FFF  Low KERNAL (lokernal, largely unchanged)
 $A000–$BFFF  Cartridge ROM: bootstrap loader (stays as ROM throughout runtime)
 $C000–$CFFF  GEOS KERNAL main code (Atari OS ROM disabled; RAM used here)
 $D000–$D7FF  Atari hardware I/O: GTIA, POKEY, PIA, ANTIC
-$D800–$DFFF  Atari FP ROM (leave alone unless OS fully replaced)
+$D800–$DFFF  RAM (exposed when OS ROM is disabled; this is FP ROM only while bit 0 of PORTB remains set)
 $E000–$FFFF  GEOS KERNAL continued + input driver (Atari OS ROM disabled; RAM)
 $FD00–$FEFF  Input driver (same location as C128; see note below)
 $FFFA–$FFFF  CPU vectors: NMI, RESET, IRQ (must live in RAM once OS disabled)
@@ -131,7 +131,9 @@ Tested operation masks (read-modify-write to preserve other bits):
 
 ## 3. Cartridge Boot Strategy
 
-An Atari 800 XL right-slot cartridge occupies $A000–$BFFF (8 KB). The cartridge
+An Atari 800 XL cartridge occupies $A000–$BFFF (8 KB). This is electrically
+equivalent to the original Atari 800 left slot; the Atari 800 right slot maps to
+$8000–$9FFF. The cartridge
 header lives at the top of the ROM:
 
 - `$BFFA–$BFFB`: **RUN address** — jumped to (JMP) by the OS once initialisation is complete
@@ -341,9 +343,9 @@ WSYNC   = $D40A   ; Write: halt CPU until next horizontal blank
 VCOUNT  = $D40B   ; Vertical line counter (read)
 PENH    = $D40C   ; Light pen horizontal position (read)
 PENV    = $D40D   ; Light pen vertical position (read)
-NMIEN   = $D40E   ; NMI enable: bit6=VBI, bit5=DLI
+NMIEN   = $D40E   ; NMI enable: bit7=DLI, bit6=VBI
 NMIST   = $D40F   ; NMI status (read): bit7=DLI pending, bit6=VBI pending
-NMIRES  = $D40F   ; NMI acknowledge/reset (write; use for VBI acknowledge)
+NMIRES  = $D40F   ; NMI acknowledge/reset (write; typically used on VBI only)
 
 ; -----------------------------------------------
 ; NMI control macros (usable in both OS-assisted and ROM-off modes)
@@ -664,7 +666,7 @@ RAM). The IRQ vector at $FFFE handles BRK and any POKEY IRQ use.
 
 ; Enable VBI NMI
     lda #$40
-    sta nmiEnableMask   ; baseline mask: VBI only (set to #$60 when DLI enabled)
+    sta nmiEnableMask   ; baseline mask: VBI only (set to #$C0 when DLI enabled)
     sta NMIEN
 
 geos_nmi:
@@ -715,7 +717,7 @@ This provides a clean replacement for the C64's `sei`/`cli` pattern, but GEOS ha
 nested critical sections, so the macros must be reference-counted. Add low-RAM
 variables (for example in `kernal/vars/vars_atari.s`):
 - `nmiDisableDepth` (initialized to `0`)
-- `nmiEnableMask` (initialized to `#$40`; set to `#$60` when DLI sampling is enabled)
+- `nmiEnableMask` (initialized to `#$40`; set to `#$C0` when DLI sampling is enabled)
 
 Then add to `inc/geosmac.inc`:
 
@@ -747,15 +749,18 @@ semantics without prematurely re-enabling NMI in nested call paths.
 
 NMI dispatch rule: DLI and VBI share the same CPU NMI vector at `$FFFA`. Always branch
 by `NMIST` inside `geos_nmi`; do not run full VBI work on DLI entries. Also do not
-write `NMIRES` in the DLI path; DLI status auto-clears on interrupt service completion.
+write `NMIRES` in the DLI path; ANTIC clears DLI/VBI state automatically as the frame
+advances, and unnecessary `NMIRES` writes can confuse dispatch.
 
 ### 6.4 Rewrite: Keyboard Scanner
 
 **Current files:** `kernal/keyboard/`
 **New file:** `kernal/keyboard/keyboard_atari.s`
 
-The C64 scans an 8×8 matrix through CIA1. Atari POKEY performs hardware key scanning.
-Three registers are relevant:
+The C64 scans an 8×8 matrix through CIA1. Atari POKEY performs hardware key scanning,
+so GEOS-XL should consume the latched key state rather than attempt a CIA-style
+row/column matrix scan. A dedicated POKEY keyboard IRQ path is optional, not required,
+for baseline GEOS bring-up. Three registers are relevant:
 
 | Register | Address | Purpose |
 |----------|---------|---------|
@@ -801,7 +806,10 @@ key codes (as defined in `inc/const.inc`). Atari key codes differ significantly 
 C64 scan codes.
 
 Key repeat: in OS-assisted mode, use OS repeat delay via `KEYREP` ($02DA). In ROM-off
-mode, implement a repeat counter in `keyboard_atari.s` using the VBI tick counter.
+mode, implement a repeat counter in `keyboard_atari.s` using the VBI tick counter. If
+later testing shows missed very-short key taps or queue overruns, an interrupt-driven
+POKEY keyboard path can be added as a refinement, but it is not a prerequisite for the
+Phase 3 baseline.
 
 ### 6.5 Adapt: Zero Page
 
@@ -893,7 +901,7 @@ Required architecture:
     .byte $8F, <scanline_addr, >scanline_addr
 
 InitMouseDLI:
-    lda #$60            ; NMIEN mask: bit6=VBI + bit5=DLI
+    lda #$C0            ; NMIEN mask: bit7=DLI + bit6=VBI
     sta nmiEnableMask
     sta NMIEN
     rts
@@ -912,7 +920,8 @@ ServiceMouseDLI:
 
 Because DLI and VBI share a single NMI vector, `ServiceMouseDLI` must be reached via
 `geos_nmi` dispatch (see §6.3 Mode B). Keep DLI service short and avoid `NMIRES` writes
-there; only the VBI path acknowledges through `NMIRES`.
+there; they are normally unnecessary for DLI dispatch, and the VBI path is the place to
+strobe `NMIRES` if the runtime chooses to clear NMIST explicitly.
 
 VBI-side cursor update:
 
