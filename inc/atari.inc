@@ -11,23 +11,35 @@ HPOSP0   = $D000 ; Player 0 horizontal position (write)
 HPOSP1   = $D001
 HPOSP2   = $D002
 HPOSP3   = $D003
-HPOSM0   = $D004 ; Missile 0 horizontal position
+HPOSM0   = $D004 ; Missile 0 horizontal position (write)
+HPOSM1   = $D005
+HPOSM2   = $D006
+HPOSM3   = $D007
 SIZEP0   = $D008 ; Player 0 size
 SIZEP1   = $D009
 SIZEP2   = $D00A
 SIZEP3   = $D00B
+SIZEM    = $D00C ; Missile size (write)
 GRAFP0_W = $D00D ; Player 0 graphics data (write)
 GRAFP1_W = $D00E
 GRAFP2_W = $D00F
 GRAFP3_W = $D010
+GRAFM_W  = $D011 ; Missile graphics data (write) — read alias at same addr is TRIG1_R
 TRIG0_R  = $D010 ; Joystick 0 trigger (read, active low: 0=pressed)
 TRIG1_R  = $D011 ; Joystick 1 trigger (read, active low)
+TRIG2_R  = $D012 ; Joystick 2 trigger / light-gun trigger (read, active low)
+TRIG3_R  = $D013 ; Joystick 3 trigger / light-gun trigger (read, active low)
+PAL_R    = $D014 ; Hardware video standard (read): bit3=0 → PAL, bit3=1 → NTSC
+                  ; (write at $D014 is COLPM2 — unrelated register)
 GRAFP0   = GRAFP0_W
 GRAFP1   = GRAFP1_W
 GRAFP2   = GRAFP2_W
 GRAFP3   = GRAFP3_W
+GRAFM    = GRAFM_W
 TRIG0    = TRIG0_R
 TRIG1    = TRIG1_R
+TRIG2    = TRIG2_R
+TRIG3    = TRIG3_R
 COLPM0   = $D012 ; Player 0 color
 COLPM1   = $D013
 COLPM2   = $D014
@@ -71,6 +83,10 @@ AUDC3_W   = $D205
 AUDF4_W   = $D206
 AUDC4_W   = $D207
 AUDCTL_W  = $D208 ; Audio control (write)
+STIMER_W  = $D209 ; Write: start POKEY timers (read alias at same addr is KBCODE)
+SKRES_W   = $D20A ; Write: reset SKSTAT error bits (read alias is RANDOM)
+SEROUT_W  = $D20D ; Serial output data (write)
+SERIN_R   = $D20D ; Serial input data (read)
 IRQEN_W   = $D20E ; IRQ enable mask (write)
 IRQST_R   = $D20E ; IRQ status (read, active-low bits)
 SKSTAT_R  = $D20F ; Serial/keyboard status (bit2=0 key down, bit3=0 shift down)

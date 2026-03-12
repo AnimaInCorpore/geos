@@ -19,7 +19,7 @@ interrupts, and memory mapping.
 
 | Feature        | C64                           | Atari 800 XL                       |
 |----------------|-------------------------------|-------------------------------------|
-| CPU            | 6510 @ 1 MHz                  | 6502C (SALLY) @ 1.79 MHz            |
+| CPU            | 6510 @ ~1 MHz (PAL ~0.985 MHz)| 6502C (SALLY) @ ~1.77 MHz (PAL); ~1.79 MHz NTSC |
 | CPU I/O port   | $00/$01 (memory banking)      | Not present (normal RAM at $00/$01) |
 | Video          | VIC-II ($D000–$D02F)          | ANTIC ($D400) + GTIA ($D000)        |
 | Audio/kbd I/O  | SID ($D400), CIA1 ($DC00)     | POKEY ($D200), PIA ($D300)          |
@@ -214,23 +214,35 @@ HPOSP0  = $D000   ; Player 0 horizontal position (write)
 HPOSP1  = $D001
 HPOSP2  = $D002
 HPOSP3  = $D003
-HPOSM0  = $D004   ; Missile 0 horizontal position
+HPOSM0  = $D004   ; Missile 0 horizontal position (write)
+HPOSM1  = $D005
+HPOSM2  = $D006
+HPOSM3  = $D007
 SIZEP0  = $D008   ; Player 0 size
 SIZEP1  = $D009
 SIZEP2  = $D00A
 SIZEP3  = $D00B
+SIZEM   = $D00C   ; Missile size (write)
 GRAFP0_W = $D00D  ; Player 0 graphics data (write)
 GRAFP1_W = $D00E
 GRAFP2_W = $D00F
 GRAFP3_W = $D010
+GRAFM_W  = $D011  ; Missile graphics data (write) — read alias is TRIG1_R
 TRIG0_R  = $D010  ; Joystick 0 trigger (read, active low: 0=pressed)
 TRIG1_R  = $D011  ; Joystick 1 trigger (read, active low)
+TRIG2_R  = $D012  ; Joystick 2 trigger / light-gun trigger (read, active low)
+TRIG3_R  = $D013  ; Joystick 3 trigger / light-gun trigger (read, active low)
+PAL_R    = $D014  ; Hardware video standard (read): bit3=0 → PAL, bit3=1 → NTSC
+                  ; write at $D014 is COLPM2 — unrelated register
 GRAFP0   = GRAFP0_W
 GRAFP1   = GRAFP1_W
 GRAFP2   = GRAFP2_W
 GRAFP3   = GRAFP3_W
+GRAFM    = GRAFM_W
 TRIG0    = TRIG0_R
 TRIG1    = TRIG1_R
+TRIG2    = TRIG2_R
+TRIG3    = TRIG3_R
 COLPM0  = $D012   ; Player 0 color
 COLPM1  = $D013
 COLPM2  = $D014
@@ -274,6 +286,10 @@ AUDC3_W = $D205
 AUDF4_W = $D206
 AUDC4_W = $D207
 AUDCTL_W = $D208  ; Audio control (write)
+STIMER_W = $D209  ; Write: start POKEY timers (read alias at same addr is KBCODE)
+SKRES_W  = $D20A  ; Write: reset SKSTAT error bits (read alias is RANDOM)
+SEROUT_W = $D20D  ; Serial output data (write)
+SERIN_R  = $D20D  ; Serial input data (read)
 IRQEN_W  = $D20E  ; IRQ enable mask (write)
 IRQST_R  = $D20E  ; IRQ status (read, active-low bits)
 SKSTAT_R = $D20F  ; Serial/keyboard status (read): bit2=0 key down, bit3=0 shift down
@@ -389,8 +405,12 @@ The project build still uses `ca65`/`ld65` by default.
 .ifdef atarixl
   ; Atari 800 XL variant
   PLATFORM        = 1       ; 0=C64, 1=Atari XL
-  VIDEO_STD       = 0       ; 0=PAL (first release), 1=NTSC
-  VBI_HZ          = 50      ; PAL frame rate baseline
+  ; VIDEO_STD and VBI_HZ are NOT compile-time constants for Atari XL.
+  ; They are populated at runtime by DetectVideoStandard in start_atari.s,
+  ; which reads PAL_R ($D014) to distinguish PAL (bit3=0) from NTSC (bit3=1).
+  ; RAM variables holding the detected values live in vars_atari.s:
+  ;   videoStd    .byte   ; 0=PAL, 1=NTSC
+  ;   vbiHz       .byte   ; 50 (PAL) or 60 (NTSC)
   BITMAP_BASE     = $4000   ; 320×200 monochrome bitmap (8000 bytes, same as C64)
   KERNAL_BASE     = $C000   ; KERNAL lives at same address as C64 (Atari OS ROM displaced)
   INPUT_BASE      = $FD00   ; Input driver (C128 address; C64 used $FE80)
@@ -398,6 +418,33 @@ The project build still uses `ca65`/`ld65` by default.
   ZP_BASE         = $80     ; GEOS zero page starts at $80 (Atari OS owns $00–$7F)
 .endif
 ```
+
+`DetectVideoStandard` must be called early in `start_atari.s`, before any timing
+constant or frame-rate logic runs:
+
+```asm
+DetectVideoStandard:
+    lda PAL_R           ; $D014: hardware video standard register (read-only)
+    and #$0E            ; mask relevant ID bits (bit 3 is the discriminator)
+    beq @is_pal
+@is_ntsc:
+    lda #1
+    sta videoStd
+    lda #60
+    sta vbiHz
+    rts
+@is_pal:
+    lda #0
+    sta videoStd
+    lda #50
+    sta vbiHz
+    rts
+```
+
+All code that previously used the compile-time `VBI_HZ` constant must load `vbiHz`
+from RAM instead. Timing tables (keyboard repeat, cursor blink, scheduler tick
+divisors, SIO timeout frames) must be indexed by `vbiHz` or stored as separate
+PAL/NTSC variants selected at runtime.
 
 ### New linker config: `kernal/kernal_atarixl.cfg`
 
@@ -529,9 +576,11 @@ atari_dlist:
     .word atari_dlist           ; loop back to top of display list
 ```
 
-PAL baseline note: keep display list geometry as defined above for v1 PAL release.
-For NTSC follow-up, keep bitmap height at 200 but also revalidate border centering,
-VBI-rate-dependent timing, and palette tuning (see §10).
+Display geometry note: the 200-line bitmap and the 24-scanline top border defined
+above work on both PAL and NTSC without modification — the border difference between
+standards shows up only as a larger bottom border on PAL (more total active lines).
+VBI-rate-dependent timing is handled via `vbiHz` (see §5); palette tuning for NTSC
+is deferred to §10.
 
 Initialization:
 ```asm
@@ -546,6 +595,15 @@ Initialization:
     sta COLBK
     lda #$0F            ; white foreground
     sta COLPF2
+
+    ; Zero all player and missile graphics data registers to prevent garbage
+    ; from appearing on screen before P/M DMA is configured in Phase 6.
+    lda #$00
+    sta GRAFP0_W
+    sta GRAFP1_W
+    sta GRAFP2_W
+    sta GRAFP3_W
+    sta GRAFM_W         ; missile graphics — must be zeroed explicitly
 ```
 
 Do not switch to wide playfield (`DMACTL` low bits = `11`) unless you intentionally
@@ -558,8 +616,10 @@ target overscan width; normal width (`10`) is the canonical 320-pixel mode-$0F s
 
 On C64, GEOS hooks the CIA1 frame IRQ for its main timing tick. On Atari the
 equivalent is the ANTIC Vertical Blank Interrupt (VBI), which fires as an **NMI**
-once per frame. For the first release, assume PAL timing (50 Hz) everywhere.
-Two operating modes are needed during development:
+once per frame. The frame rate is **not** hard-coded: `DetectVideoStandard` (§5)
+reads `PAL_R` at boot and writes `vbiHz` (50 or 60) into RAM. All VBI-derived timing
+constants must use `vbiHz` rather than a literal 50. Two operating modes are needed
+during development:
 
 #### Mode A — OS-assisted (use during Phases 2–4)
 
@@ -699,7 +759,7 @@ Three registers are relevant:
 
 | Register | Address | Purpose |
 |----------|---------|---------|
-| `KBCODE` | $D209 | Raw keyboard code; bits 0–5 = key index, bit 6 = Shift, bit 7 = Control. It does **not** reset to $FF on release. |
+| `KBCODE` | $D209 | Raw keyboard code; bits 0–5 = key index, bit 6 = Shift (0 = pressed, active-low), bit 7 = Control (0 = pressed, active-low). It does **not** reset to $FF on release. Cross-check shift state with `SKSTAT` bit 3 (also active-low) for reliable detection. |
 | `SKSTAT` | $D20F | Bit 2 = 0 while a key is physically held down (key-down qualifier). |
 | `CH`     | $02FC | OS shadow of keyboard input (ATASCII). Holds $FF when no key event is pending. Valid only while OS is active; replicate with a GEOS-owned variable once OS ROM is disabled. |
 
@@ -1079,7 +1139,7 @@ SIOBridgeRam:
 | Drive    | Tracks | Sectors/track | Bytes/sector | Capacity | Notes |
 |----------|--------|---------------|--------------|----------|-------|
 | 810 SD   | 40     | 18            | 128          | 90 KB    | Standard; most common |
-| 1050 ED  | 40     | 26            | 128          | 127 KB   | Enhanced density |
+| 1050 ED  | 40     | 26            | 128          | ~130 KB  | Enhanced density; 1040 sectors × 128 B = 133,120 B |
 | XF551 DD | 40     | 18            | 256          | 180 KB   | True double density |
 | Happy 1050 DD | 40 | 18           | 256          | 180 KB   | Requires drive modification |
 
@@ -1308,8 +1368,10 @@ boundary handling (see §6.8).
 9. Run graphics routines (`HorizontalLine`, `Rectangle`); confirm correct output
 
 Phase 2 gate before considering step 9 done:
+- Call `DetectVideoStandard` early in `start_atari.s` and confirm `vbiHz` is set to 50 on a PAL machine before any timing logic runs.
 - Replace C64 tiled framebuffer address helpers with Atari linear scanline LUT helpers.
 - Validate drawing across the LMS jump boundary (`y=101` to `y=102`) to ensure no wrap artifacts.
+- Confirm GRAFM_W and all GRAFPx registers are zeroed in the GTIA init block so no garbage missile or player data appears on screen.
 
 Preferred jsA8E browser-side iteration path (repeatable evidence and diagnostics; not Altirra sign-off):
 - Use the smoke-test workflows documented in `README.md` ("Atari XL Smoke Testing (jsA8E)") and `third_party/A8E/implementation/jsA8E/AUTOMATION.md`.
@@ -1328,9 +1390,20 @@ Preferred jsA8E browser-side iteration path (repeatable evidence and diagnostics
 12. Write `kernal/keyboard/keyboard_atari.s` with POKEY scancode table
 13. Test: joystick moves cursor, keyboard events reach GEOS event loop
 
+Phase 3 gate before considering step 13 done:
+- Verify KBCODE modifier bit polarity: bit 6 = **0** when Shift is pressed (active-low), bit 7 = **0** when Control is pressed (active-low). A logic inversion here is silent — the keyboard works but every unshifted key produces its shifted character and vice versa.
+- Explicit test cases: unshifted `A` → lowercase `a`; Shift+`A` → uppercase `A`; Control+`C` → GEOS control event, not the character `c`.
+- Cross-check against SKSTAT bit 3 (also active-low for Shift) to confirm consistent modifier detection between the two register paths.
+
 ### Phase 4: Bring up disk (OS-assisted mode, SIOV active)
 14. Write `drv/drv1050.s` using OS `jsr SIOV`
-15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool
+15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool.
+    Correct sector counts to use:
+    - 810 SD: 720 sectors × 128 bytes = 90 KB → 360 GEOS logical blocks (raw)
+    - 1050 ED: **1040 sectors** × 128 bytes = ~130 KB → **520 GEOS logical blocks** (raw)
+    Pass these figures to `tools/atari_geos_disk.py` and to the BAM layout in
+    `drv/drv1050.s`. A BAM sized for fewer blocks leaves tail sectors permanently
+    unallocatable without any error.
 16. Audit sector-payload references in `kernal/files/`; replace hard-coded `$FE`/`#254` literals with named 256-byte-block constants where needed, without changing GEOS block semantics (see §6.7)
 17. Test: directory listing, file read, file write, disk full detection
 
@@ -1353,19 +1426,27 @@ Phase 4 gate before considering step 17 done:
 Phase 5 prerequisites and disk rule:
 - Do not start ROM-disable/cartridge work until Phase 4 disk I/O succeeds end-to-end with OS ROM enabled in Altirra. Use jsA8E in parallel as the faster browser-side path to clear pre-entry boot issues, confirm bank-state assumptions, and iterate on low-RAM staging/copy-under-ROM behavior, but do not block Phase 5 on jsA8E reproducing the exact final `D1:` boot configuration.
 - Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Reuse the Phase 4 staging/copy-under-ROM path and do not block Phase 5 on raw POKEY SIO.
+- If a raw-SIO optimisation path is prototyped in Phase 5 or later, calculate the POKEY baud-rate divisor against the **PAL clock (~1.773 MHz)**, not the NTSC figure (~1.790 MHz). Standard Atari SIO at 19,200 baud: `divisor = (1,773,000 / (2 × 19,200)) − 7 ≈ 39`. Using the NTSC divisor (~40) on PAL hardware shifts the baud rate by ~1%, which is within tolerance for most drives but will cause framing errors on marginal hardware.
 
 ### Phase 6: Integration and polish
 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
 23. Connect VBI counter to `kernal/time/` clock routines
 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
 25. Regression-test all graphics, font, menu, dialog, and file operations
-26. Tune timing loops (Atari 1.79 MHz vs C64 1 MHz; cycle-count-dependent delays differ)
+26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80×)
+
+Step 22 P/M init requirement:
+- Zero GRAFM_W ($D011) alongside GRAFPx during P/M setup. This register controls
+  missile graphics data and has no power-on default of zero; undefined missile pixels
+  will appear on screen if it is not explicitly cleared before P/M DMA is enabled.
 
 Step 24 implementation requirement:
-- Poll ST mouse quadrature using ANTIC DLIs (~300–500 Hz by placing DLI on selected scanlines), then apply accumulated deltas in the PAL frame VBI (50 Hz).
+- Poll ST mouse quadrature using ANTIC DLIs (~300–500 Hz by placing DLI on selected scanlines), then apply accumulated deltas in the VBI. The VBI rate (50 Hz PAL / 60 Hz NTSC) is read from the `vbiHz` runtime variable set by `DetectVideoStandard`.
 
 Step 26 timing requirement:
-- Calibrate delays with ANTIC/P-M DMA enabled; effective CPU time is lower during active display than during VBI.
+- Use **~1.773 MHz** as the PAL CPU clock for all delay loop calibration — not 1.79 MHz (that is the NTSC figure). The ratio against a PAL C64 (~0.985 MHz) is ~1.80×, not 1.79×.
+- Calibrate delays with ANTIC/P-M DMA enabled; effective CPU throughput is lower during active display than during VBI due to DMA cycle stealing.
+- All frame-based timing constants (cursor blink, keyboard repeat, scheduler tick divisors) must load `vbiHz` at runtime rather than assume 50.
 
 Phase 6 regression note:
 - Use jsA8E first for repeatable browser-side regression capture (screenshots, traces, failure bundles, and scripted input) across Phases 2-4 smoke binaries and selected cartridge/ROM-off bring-up binaries, then repeat milestone sign-off in Altirra and on PAL hardware where required.
@@ -1406,9 +1487,11 @@ OS `SIOV` through a low-RAM ROM-banking trampoline until an optional optimized r
 SIO path is added. Keep both modes distinct and do not mix OS-ROM-active assumptions
 with ROM-off code.
 
-**PAL-first timing policy.** First-release build targets PAL only (`VBI_HZ = 50`).
-Implement timing with `VBI_HZ`-based constants so NTSC (`VBI_HZ = 60`) can be added
-later without rewriting core logic (scope checklist in §10).
+**Runtime timing policy.** The frame rate is determined at boot by `DetectVideoStandard`
+reading `PAL_R` ($D014) and writing `vbiHz` (50 or 60) into RAM. All timing logic must
+load `vbiHz` rather than use a literal constant, so the same binary runs correctly on
+both PAL and NTSC hardware. NTSC validation scope is limited to display centering,
+palette tuning, and regression (see §10).
 
 **ANTIC DMA cycle stealing.** Effective CPU throughput is lower during active display
 than during VBI, especially with mode `$0F` plus P/M DMA enabled. Validate any
@@ -1448,19 +1531,49 @@ and OS ROM disable is bit 0 = 0 (RAM). The polarities differ from what intuition
 might suggest; refer to the mask table in §2 and test on real hardware or Altirra
 with accurate XL hardware emulation enabled.
 
+**KBCODE modifier polarity.** POKEY KBCODE bits 6 and 7 are **active-low**: bit 6 = 0
+means Shift is pressed, bit 7 = 0 means Control is pressed — the opposite of what the
+naming implies. A polarity error here is silent: the keyboard appears to work but
+every unshifted key produces its shifted character and vice versa. Verify against the
+Phase 3 gate test cases (see §8) before marking step 12 complete.
+
+**Disk geometry (1050 ED).** The Atari 1050 enhanced-density format has **1040
+sectors**, not a count derived from 127 KB. Sizing the BAM or disk-image tool against
+a smaller sector count leaves tail sectors permanently unallocatable. Use 720 sectors
+for SD (810) and 1040 sectors for ED (1050) in both `drv/drv1050.s` and
+`tools/atari_geos_disk.py`.
+
+**PAL CPU clock vs NTSC.** The PAL Atari 800 XL CPU (6502C/SALLY) runs at
+**~1.773 MHz** — derived from the PAL master clock (~14.188 MHz / 8). NTSC systems
+run at ~1.790 MHz. All cycle-counted delays and timer constants must use the PAL
+figure. The ~1% difference is small but matters for SIO baud-rate divisors on
+marginal drives and for any hand-tuned delay loops.
+
+**PAL vs NTSC runtime detection.** `DetectVideoStandard` in `start_atari.s` reads
+`PAL_R` ($D014, GTIA read-only) at boot and writes `vbiHz`/`videoStd` into RAM.
+All timing logic uses those variables. A compile-time `VIDEO_STD` constant is **not
+used** for Atari XL; the same binary works on both PAL and NTSC hardware.
+
 ---
 
 ## 10. NTSC Follow-Up Scope
 
-NTSC support should start only after the PAL baseline (Phases 1–5) is stable.
-Keep the same 320×200 bitmap model, then validate these deltas:
+Because `DetectVideoStandard` (§5) reads `PAL_R` at boot and populates `vbiHz` and
+`videoStd` at runtime, and because all timing constants use those RAM variables rather
+than compile-time literals, **no separate NTSC build is required**. The same binary
+runs correctly on both PAL and NTSC hardware.
 
-1. Set timing configuration to NTSC (`VIDEO_STD = 1`, `VBI_HZ = 60`).
-2. Re-test display-list centering/borders on NTSC hardware or emulator and adjust
-   blank-line counts if needed.
-3. Recalibrate all frame-based timing constants (keyboard repeat, cursor blink,
-   scheduler ticks, and any disk timeout logic measured in frames).
-4. Re-check GTIA palette choices on NTSC displays/emulators and adjust hues/luma
-   where readability or UI contrast regresses.
-5. Re-run integration tests from Phase 6 under NTSC to confirm no PAL-only timing
-   assumptions remain.
+NTSC validation should start only after the PAL baseline (Phases 1–5) is stable.
+The remaining delta is small:
+
+1. **Display-list border centering.** The 24-line top border produces a larger bottom
+   border on PAL than on NTSC (PAL has more total ANTIC active lines). Re-test on NTSC
+   hardware or in Altirra with an NTSC profile; adjust blank-line count in the display
+   list if vertical centering is visually unacceptable. The bitmap height stays at 200.
+2. **GTIA palette tuning.** GTIA color register values produce different hues on PAL vs
+   NTSC due to the different color subcarrier. Re-check all UI colors (foreground,
+   background, pointer, dialog highlight) on an NTSC display or accurate NTSC emulator
+   and adjust `COLPF2`, `COLBK`, and `COLPM0`/`COLPM1` values as needed.
+3. **Regression.** Re-run the full Phase 6 integration test suite under NTSC to confirm
+   no PAL-only assumption survived (e.g., a hard-coded `#50` that was not replaced with
+   `vbiHz`, or a delay loop calibrated only under PAL DMA load).

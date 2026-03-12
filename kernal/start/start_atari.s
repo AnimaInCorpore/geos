@@ -116,9 +116,9 @@ _ResetHandle:
 	cld
 	ldx #$ff
 	txs
-	jsr InstallAtariSioBridge
 
 .ifdef atarixl_disk_smoketest
+	jsr InstallAtariSioBridge
 	jmp Phase4SmokeRun
 @smokeLoop:
 	jmp @smokeLoop
@@ -138,11 +138,6 @@ _ResetHandle:
 	jmp @smokeLoop
 .endif
 
-	; Phase 5: Disable Atari OS ROM to expose GEOS KERNAL RAM at $C000-$FFFF.
-	; This must be done from RAM (the stub) to avoid crashing during the switch.
-	jsr InstallDisableRomStub
-	jsr $0300 ; Call the stub at its RAM location
-
 	; Phase 2 bring-up: ANTIC mode $0F display list and GTIA palette.
 	jsr InitAtariDisplay
 	jsr InitAtariKeyboard
@@ -152,6 +147,12 @@ _ResetHandle:
 	.word $0500
 	.word dirEntryBuf
 	.byte 0
+
+	jsr InstallAtariSioBridge
+	; Phase 5: Disable Atari OS ROM to expose GEOS KERNAL RAM at $C000-$FFFF.
+	; This must be done from RAM (the stub) to avoid crashing during the switch.
+	jsr InstallDisableRomStub
+	jsr $0300 ; Call the stub at its RAM location
 
 	; Keep existing date initialization flow for now.
 	ldy #2
