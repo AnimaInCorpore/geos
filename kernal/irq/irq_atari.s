@@ -107,6 +107,7 @@ _NMIHandler:
 
 @is_dli:
 	; TODO: DLI handler (mouse sampling)
+	sta NMIRES          ; acknowledge DLI; without this the NMI re-fires immediately
 	pla
 	rti
 

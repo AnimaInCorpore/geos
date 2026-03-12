@@ -138,21 +138,32 @@ _ResetHandle:
 	jmp @smokeLoop
 .endif
 
+	; Snapshot OS vectors while OS ROM is still active, then disable OS ROM so
+	; the GEOS kernal at $C000-$FFFF becomes visible.  All kernal calls (Init*,
+	; i_FillRam, …) must come AFTER this pair; they live at $C100+ and would
+	; hit OS ROM code if called before the disable.
+	jsr InstallAtariSioBridge
+	jsr InstallDisableRomStub
+	jsr $0300 ; Call the stub at its RAM location — OS ROM now off
+
 	; Phase 2 bring-up: ANTIC mode $0F display list and GTIA palette.
 	jsr InitAtariDisplay
 	jsr InitAtariKeyboard
+
+	; Zero interrupt dispatch vectors before enabling Mode B NMI.  _NMIHandler
+	; will fire as soon as NMIEN is written by InitAtariIRQ; CallRoutine must
+	; see null vectors rather than uninitialized RAM until FirstInit runs.
+	lda #0
+	sta intTopVector
+	sta intTopVector+1
+	sta intBotVector
+	sta intBotVector+1
 	jsr InitAtariIRQ
 
 	jsr i_FillRam
 	.word $0500
 	.word dirEntryBuf
 	.byte 0
-
-	jsr InstallAtariSioBridge
-	; Phase 5: Disable Atari OS ROM to expose GEOS KERNAL RAM at $C000-$FFFF.
-	; This must be done from RAM (the stub) to avoid crashing during the switch.
-	jsr InstallDisableRomStub
-	jsr $0300 ; Call the stub at its RAM location
 
 	; Keep existing date initialization flow for now.
 	ldy #2
@@ -309,7 +320,8 @@ SioBridgeTemplate:
 	sta SIO_BRIDGE_SAVED_PORTB
 	lda #$00
 	sta NMIEN
-	ora #$83
+	lda SIO_BRIDGE_SAVED_PORTB  ; reload — previous lda #$00 clobbered A
+	ora #$83                    ; force OS ROM active, BASIC off, self-test off
 	sta PORTB
 	ldy #37
 @swapVectors:
