@@ -96,6 +96,7 @@ _NMIHandler:
 	pha
 	tya
 	pha
+	jsr TickAtariTimers
 	jsr AtariIRQCore
 	pla
 	tay
@@ -110,6 +111,64 @@ _NMIHandler:
 	sta NMIRES          ; acknowledge DLI; without this the NMI re-fires immediately
 	pla
 	rti
+
+; Increment RTCLOK and decrement CDTMV1-5 each VBI.
+; Replicates the OS VBI-immediate timer maintenance so that SIOV timeouts
+; (driven by CDTMV5) and other OS services work correctly in ROM-off mode,
+; and also when jsA8E dispatches the NMI to the RAM handler instead of the
+; OS ROM handler while the SIO bridge has OS ROM banked in.
+; Clobbers A only; X and Y are preserved.
+TickAtariTimers:
+	; Increment RTCLOK ($12-$14) — 3-byte big-endian real-time clock
+	inc RTCLOK+2
+	bne @rtcDone
+	inc RTCLOK+1
+	bne @rtcDone
+	inc RTCLOK
+@rtcDone:
+	; Decrement CDTMV1-5 ($0218-$0221) — 16-bit little-endian countdown timers.
+	; Each timer: if non-zero, subtract 1 from the 16-bit value.
+	lda CDTMV1
+	bne @decCDTMV1lo
+	lda CDTMV1+1
+	beq @skipCDTMV1
+	dec CDTMV1+1
+@decCDTMV1lo:
+	dec CDTMV1
+@skipCDTMV1:
+	lda CDTMV2
+	bne @decCDTMV2lo
+	lda CDTMV2+1
+	beq @skipCDTMV2
+	dec CDTMV2+1
+@decCDTMV2lo:
+	dec CDTMV2
+@skipCDTMV2:
+	lda CDTMV3
+	bne @decCDTMV3lo
+	lda CDTMV3+1
+	beq @skipCDTMV3
+	dec CDTMV3+1
+@decCDTMV3lo:
+	dec CDTMV3
+@skipCDTMV3:
+	lda CDTMV4
+	bne @decCDTMV4lo
+	lda CDTMV4+1
+	beq @skipCDTMV4
+	dec CDTMV4+1
+@decCDTMV4lo:
+	dec CDTMV4
+@skipCDTMV4:
+	lda CDTMV5
+	bne @decCDTMV5lo
+	lda CDTMV5+1
+	beq @skipCDTMV5
+	dec CDTMV5+1
+@decCDTMV5lo:
+	dec CDTMV5
+@skipCDTMV5:
+	rts
 
 AtariDeferredVBI:
 	jsr AtariIRQCore

@@ -150,6 +150,11 @@ XITVBV   = $E462 ; OS: VBI exit (XL/XE ROM)
 VVBLKI   = $0222 ; Immediate VBI vector (2-byte pointer, OS-managed)
 VVBLKD   = $0224 ; Deferred VBI vector (2-byte pointer, OS-managed)
 RTCLOK   = $0012 ; 3-byte real-time clock incremented each VBI ($12/$13/$14)
+CDTMV1   = $0218 ; 16-bit countdown timer 1, lo byte first; decremented each VBI
+CDTMV2   = $021A ; 16-bit countdown timer 2
+CDTMV3   = $021C ; 16-bit countdown timer 3
+CDTMV4   = $021E ; 16-bit countdown timer 4
+CDTMV5   = $0220 ; 16-bit countdown timer 5 — SIOV uses this for read/write timeouts
 CH       = $02FC ; OS keyboard shadow: $FF = no key pending, else ATASCII code
 KEYREP   = $02DA ; OS keyboard repeat counter
 
