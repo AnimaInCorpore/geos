@@ -113,10 +113,53 @@ When driving jsA8E directly:
    and an optional screenshot.
 8. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
    `debug.runUntilPcOrSnapshot(...)` before writing one-off harness code.
-9. In headless CDP runs, do not assume the harness query string
+9. Use `system.saveSnapshot()` / `system.loadSnapshot()` to preserve expensive
+   bring-up checkpoints. For Atari XL work, the useful restore points are:
+   * after ROMs are loaded and the machine is idle
+   * after the smoke XEX reaches its entry breakpoint
+   * after Phase 4 mounts the ATR and before the first GEOS disk call
+   Snapshots are best for repeated mid-run experiments and worker-vs-main-thread
+   comparisons; they are not a substitute for fresh-boot validation.
+10. In headless CDP runs, do not assume the harness query string
    (`?scenario=...&autorun=1`) is sufficient evidence that a scenario actually
    started. Confirm via the harness DOM/log state, or set the scenario and
    trigger the run explicitly through CDP.
+
+## Snapshot Workflow
+
+Use snapshots to shorten the debug loop, not to replace it.
+
+Recommended Atari XL checkpoints:
+
+* clean machine after ROM load and before the smoke artifact runs
+* smoke-entry breakpoint reached (`$0501` for Phase 2/3, `$0881` for Phase 4)
+* Phase 4 with the writable ATR mounted and the machine still paused
+
+Recommended pattern:
+
+1. boot or reload with cache-busting enabled if needed
+2. reach the checkpoint once
+3. `saveSnapshot()` and keep the returned bytes with the matching build id
+4. for each experiment, `loadSnapshot(..., { resume: "saved" })`, apply the
+   one variable you want to test, then collect artifacts on stop/failure
+5. after a candidate fix, rerun the same scenario from a fresh boot before
+   treating it as real progress
+
+Use cases where snapshots help:
+
+* repeating Phase 4 SIO or filesystem experiments without replaying the whole
+  XEX-entry and disk-mount path
+* comparing worker mode vs `?a8e_worker=0` from the same pre-failure state
+* preserving a known-good Phase 2 or Phase 3 state while Phase 4 code changes
+
+Limits:
+
+* snapshot restore skips parts of reset and boot ordering, so it can hide
+  startup bugs
+* cartridge cold-boot work for Phase 5 sign-off still needs fresh emulator boot
+  and later hardware validation
+* do not promote a fix based only on snapshot replay; always confirm with a
+  clean run
 
 ## Per-Scenario Recipes
 
