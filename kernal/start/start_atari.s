@@ -301,6 +301,10 @@ InstallAtariSioBridge:
 	sta SIO_BRIDGE_OS_VBI_VECTORS,y
 	dey
 	bpl @snapshotVbiVectors
+	lda VIMIRQ
+	sta SIO_BRIDGE_OS_VIMIRQ
+	lda VIMIRQ+1
+	sta SIO_BRIDGE_OS_VIMIRQ+1
 	ldy #5
 @snapshotTopVectors:
 	lda $fffa,y
@@ -342,6 +346,10 @@ SioBridgeTemplate:
 	sta SIO_BRIDGE_OS_VECTORS+(VVBLKI-$0200),y
 	dey
 	bpl @patchVbiVectors
+	lda SIO_BRIDGE_OS_VIMIRQ
+	sta SIO_BRIDGE_OS_VECTORS+(VIMIRQ-$0200)
+	lda SIO_BRIDGE_OS_VIMIRQ+1
+	sta SIO_BRIDGE_OS_VECTORS+(VIMIRQ-$0200)+1
 	ldy #37
 @swapVectors:
 	lda SIO_BRIDGE_OS_VECTORS,y
