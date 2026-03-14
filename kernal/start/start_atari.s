@@ -320,6 +320,9 @@ InstallAtariSioBridge:
 SioBridgeTemplate:
 	php
 	sei
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $68
+.endif
 	lda NMIEN
 	sta SIO_BRIDGE_SAVED_NMIEN
 	lda PBCTL
@@ -330,6 +333,19 @@ SioBridgeTemplate:
 	sta SIO_BRIDGE_SAVED_PORTB
 	lda #$00
 	sta NMIEN
+	; Swap top vectors while RAM is visible at $FFFA-$FFFF. Doing this before
+	; bank-in keeps jsA8E and real hardware aligned when SIOV runs with OS ROM.
+	ldy #5
+@swapTopVectors:
+	lda $fffa,y
+	sta SIO_BRIDGE_SAVED_TOP_VECTORS,y
+	lda SIO_BRIDGE_OS_TOP_VECTORS,y
+	sta $fffa,y
+	dey
+	bpl @swapTopVectors
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $69
+.endif
 	lda SIO_BRIDGE_SAVED_PORTB  ; reload — previous lda #$00 clobbered A
 	ora #$83                    ; force OS ROM active, BASIC off, self-test off
 	sta PORTB
@@ -356,21 +372,22 @@ SioBridgeTemplate:
 	sta $0200,y
 	dey
 	bpl @swapVectors
-	ldy #5
-@swapTopVectors:
-	lda $fffa,y
-	sta SIO_BRIDGE_SAVED_TOP_VECTORS,y
-	lda SIO_BRIDGE_OS_TOP_VECTORS,y
-	sta $fffa,y
-	dey
-	bpl @swapTopVectors
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $6a
+.endif
 	lda SIO_BRIDGE_SAVED_SSKCTL
 	sta $0232 ; SSKCTL
 	sta SKCTL
 	lda #$40
 	sta NMIEN
 	cli
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $6b
+.endif
 	jsr SIOV
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $6c
+.endif
 	sei
 	sta SIO_BRIDGE_SAVED_A
 	sty SIO_BRIDGE_SAVED_Y
@@ -382,14 +399,20 @@ SioBridgeTemplate:
 	sta $0200,y
 	dey
 	bpl @restoreVectors
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $6d
+.endif
+	lda SIO_BRIDGE_SAVED_PORTB
+	sta PORTB
 	ldy #5
 @restoreTopVectors:
 	lda SIO_BRIDGE_SAVED_TOP_VECTORS,y
 	sta $fffa,y
 	dey
 	bpl @restoreTopVectors
-	lda SIO_BRIDGE_SAVED_PORTB
-	sta PORTB
+.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $6e
+.endif
 	lda SIO_BRIDGE_SAVED_PBCTL
 	sta PBCTL
 	lda SIO_BRIDGE_SAVED_NMIEN

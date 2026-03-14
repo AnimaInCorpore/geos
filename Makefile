@@ -331,6 +331,12 @@ atarixl-input-smoketest:
 atarixl-disk-smoketest:
 	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_disk_smoketest=1' build/atarixl/phase4_disk_smoketest.xex build/atarixl/phase4_disk_test.atr
 
+atarixl-siov-minimal-test:
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari build/atarixl/siov_minimal_test.xex build/atarixl/phase4_disk_test.atr
+
+atarixl-siov-bridge-diag:
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari build/atarixl/siov_bridge_diag.xex build/atarixl/phase4_disk_test.atr
+
 regress:
 	@echo "********** Building variant 'bsw'"
 	@$(MAKE) VARIANT=bsw all
@@ -556,6 +562,37 @@ $(BUILD_DIR)/phase4_disk_smoketest.xex: $(BUILD_DIR)/kernal/phase4_disk_smoketes
 $(BUILD_DIR)/phase4_disk_test.atr: $(ATARI_DISK_TOOL)
 	@echo Creating $@
 	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@
+
+# Step 17a: standalone minimal SIOV test — no GEOS kernal, OS ROM stays active,
+# no SIO bridge.  Tests whether jsA8E can complete a bare sector-read SIOV call.
+$(BUILD_DIR)/siov_minimal_test.bin: tools/siov_minimal_test.s tools/siov_minimal_test.cfg
+	@mkdir -p $(dir $@)
+	$(AS) -I inc tools/siov_minimal_test.s -o $(BUILD_DIR)/siov_minimal_test.o
+	$(LD) -C tools/siov_minimal_test.cfg $(BUILD_DIR)/siov_minimal_test.o \
+	      -o $@ -m $(BUILD_DIR)/siov_minimal_test.map
+
+$(BUILD_DIR)/siov_minimal_test.xex: $(BUILD_DIR)/siov_minimal_test.bin
+	@echo Creating $@
+	printf "\xFF\xFF" > $@
+	printf "\x00\x09\xFF\x09" >> $@
+	cat $(BUILD_DIR)/siov_minimal_test.bin >> $@
+	printf "\xE0\x02\xE1\x02\x00\x09" >> $@
+
+# Step 17b: SIO bridge diagnostic — isolates which bridge step breaks SIOV.
+# Code at $0A00-$0BFF; tests 4 phases (plain SIOV, PORTB cycle, bridge sim
+# without page-2 swap, bridge sim with page-2 swap).
+$(BUILD_DIR)/siov_bridge_diag.bin: tools/siov_bridge_diag.s tools/siov_bridge_diag.cfg
+	@mkdir -p $(dir $@)
+	$(AS) -I inc tools/siov_bridge_diag.s -o $(BUILD_DIR)/siov_bridge_diag.o
+	$(LD) -C tools/siov_bridge_diag.cfg $(BUILD_DIR)/siov_bridge_diag.o \
+	      -o $@ -m $(BUILD_DIR)/siov_bridge_diag.map
+
+$(BUILD_DIR)/siov_bridge_diag.xex: $(BUILD_DIR)/siov_bridge_diag.bin
+	@echo Creating $@
+	printf "\xFF\xFF" > $@
+	printf "\x00\x0A\xFF\x0B" >> $@
+	cat $(BUILD_DIR)/siov_bridge_diag.bin >> $@
+	printf "\xE0\x02\xE1\x02\x00\x0A" >> $@
 endif
 
 $(BUILD_DIR)/kernal/kernal2.bin: $(PREFIXED_KERNAL2_OBJS) kernal/kernal2_$(VARIANT).cfg
