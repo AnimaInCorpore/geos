@@ -43,7 +43,7 @@ await runtime.dispose();
 ```
 
 **No external npm dependencies** — only Node.js built-ins (`fs`, `path`, `vm`,
-`zlib`). The existing test suite runs with:
+`zlib`). The existing automation suite runs with:
 
 ```powershell
 cd third_party/A8E/jsA8E
@@ -57,7 +57,7 @@ npm run test:automation
 | Full automation API (50+ methods) | Yes |
 | ROM / XEX / ATR loading from local files | Yes |
 | Breakpoints, stepping, disassembly | Yes |
-| Memory reads, debug state inspection | Yes |
+| Memory reads/writes + `waitForMemory(...)` | Yes |
 | Screenshots (software PNG encoding) | Yes |
 | Snapshots (save / load) | Yes |
 | HostFS (in-memory H: device) | Yes |
@@ -156,30 +156,38 @@ Notes:
 2. Snapshot the machine with `getSystemState({ timeoutMs: ... })` before each
    run. Treat a returned `error.details.parts` payload as partial state, not as
    a generic hang.
-3. Pause the machine and clear inputs/breakpoints before each run. `start()`,
+3. Check `getCapabilities()` once per session and require `groupedApi`,
+   `waitPrimitives`, `failureSnapshots`, `cacheControl`, `snapshots`,
+   `memoryWrite`, `memoryWait`, and `resetPortBOverride` for Atari bring-up.
+4. Pause the machine and clear inputs/breakpoints before each run. `start()`,
    `pause()`, and `reset()` resolve only after the state transition is
    acknowledged.
-4. Load ROMs explicitly if they are not already present. Node.js: pass file
+5. Load ROMs explicitly if they are not already present. Node.js: pass file
    paths in the `roms` option. Browser: load from URLs.
-5. Prefer `dev.runXexFromUrl(...)` and `media.mountDiskFromUrl(...)` over manual
+6. Prefer `dev.runXexFromUrl(...)` and `media.mountDiskFromUrl(...)` over manual
    fetch-plus-buffer handoff. In Node.js, use the `fetch` option or load from
    file with `dev.runXex(...)` / `media.mountDisk(...)`.
-6. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
+7. Subscribe to `events.subscribe("progress", handler)` when debugging loader or
    media issues.
-7. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` as
-   structured failure bundles, not only as exceptions. They include
-   `debugState`, `traceTail`, disassembly, console-key state, mounted media,
-   and an optional screenshot.
-8. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
-   `debug.runUntilPcOrSnapshot(...)`.
-9. Use `system.saveSnapshot()` / `system.loadSnapshot()` to preserve expensive
-   bring-up checkpoints. Useful restore points:
-   * after ROMs are loaded and the machine is idle
-   * after the smoke XEX reaches its entry breakpoint
-   * after Phase 4 mounts the ATR and before the first GEOS disk call
-10. Browser-specific: do not assume the harness query string
-   (`?scenario=...&autorun=1`) is sufficient evidence that a scenario actually
-   started. Confirm via the harness DOM/log state.
+8. Prefer deterministic waits (`debug.waitForMemory(...)`,
+   `system.waitForFrames(...)`, `system.waitForCycles(...)`) over fixed sleeps
+   when waiting on smoke markers or phase transitions.
+9. Treat timeout returns from `waitForPc()` / `waitForBreakpoint()` /
+   `waitForMemory()` as structured failure bundles, not only as exceptions.
+   They include `debugState`, `traceTail`, disassembly, console-key state,
+   mounted media, and an optional screenshot.
+10. For ad-hoc capture, use `artifacts.captureFailureState(...)` or
+    `debug.runUntilPcOrSnapshot(...)`.
+11. Use `system.saveSnapshot()` / `system.loadSnapshot()` to preserve expensive
+    bring-up checkpoints. Useful restore points:
+    * after ROMs are loaded and the machine is idle
+    * after the smoke XEX reaches its entry breakpoint
+    * after Phase 4 mounts the ATR and before the first GEOS disk call
+12. Browser-specific: do not assume the harness query string
+    (`?scenario=...&autorun=1`) is sufficient evidence that a scenario actually
+    started. Confirm via the harness DOM/log state.
+13. Browser-specific: if behavior looks stale, call
+    `system.reload({ cacheBust: true })` before rerunning.
 
 ## Snapshot Workflow
 
@@ -288,7 +296,10 @@ Flow:
 4. `media.mountDisk(...)` / `media.mountDiskFromUrl(...)` with `{ name: "phase4_disk_test.atr", slot: 0 }`
 5. clear breakpoints
 6. `start()`
-7. `waitForTime({ ms: 1500, clock: "real" })`
+7. use marker-driven waits first (for example `debug.waitForMemory(...)` on
+   `PHASE4_*` marker bytes), then fall back to
+   `debug.runUntilPcOrSnapshot(...)` or `waitForTime(...)` if marker progress
+   does not arrive in time
 8. `pause()`
 9. `collectArtifacts({ ranges: [{ label: "phase4_markers", start: 0x04e7, length: 0x0f }], traceTailLimit: 32 })`
 
@@ -304,14 +315,17 @@ partial-read failures alongside the disk markers.
 
 ### Phase 4 current jsA8E state
 
-As of 2026-03-11, jsA8E has the newer automation surface upstream:
+As of 2026-03-14, jsA8E's automation baseline for Atari bring-up includes:
 
 * `runXexFromUrl(...)`
 * `mountDiskFromUrl(...)`
 * `captureFailureState(...)`
 * `runUntilPcOrSnapshot(...)`
+* `waitForMemory(...)` plus frame/cycle wait helpers
 * progress events via `events.subscribe("progress", ...)`
 * structured timeout bundles from `waitForPc()` / `waitForBreakpoint()`
+* cache-control reload/fetch support (`system.reload({ cacheBust: true })`,
+  URL fetch options)
 
 That means the harness and the direct emulator page can both use the same
 URL-native media path. The earlier automation deadlocks are no longer the main
@@ -319,24 +333,27 @@ problem: worker lifecycle calls acknowledge completion, `getSystemState()`
 degrades into partial-state errors instead of hanging, and the same API can be
 forced into main-thread mode for deterministic fallback. The remaining Phase 4
 problem is later in disk/runtime behavior, not media transport or XEX preflight.
-A Phase 4 jsA8E run now reaches the rebased `$0881` entry breakpoint when
-launched with `awaitEntry: false`, `start: true`, and a reset-time `PORTB=$FF`
-override, then stalls after the writable ATR is swapped into `D1:` and the
-first `ReadBlock` starts.
+A Phase 4 jsA8E run reaches the rebased `$0881` entry breakpoint when launched
+with `awaitEntry: false`, `start: true`, and a reset-time `PORTB=$FF` override,
+then still stalls in the bridged `SIOV` runtime path after the writable ATR is
+swapped into `D1:`.
 
 The browser harness now appends a cache-busting query to `runXexFromUrl(...)`,
 `mountDiskFromUrl(...)`, and ROM fetches. Without that, Chrome/jsA8E can keep
 serving a stale Phase 4 XEX and report the old `$0500-$1FFF` preflight overlap
 even after the rebuilt `$0880-$1FFF` image exists on disk.
 
-The current observed marker/data state after resuming from `$0881` in a successful run:
+Current reproducible marker/data state after resuming from `$0881`:
 
 * `PHASE4_STAGE=$01`
-* `PHASE4_STATUS=$67` (ReadBlock success)
+* `PHASE4_STATUS=$6B` (bridge path reached; stall remains)
 * `PHASE4_ERROR=$00`
-* `PHASE4_RESULTS=$01` (Pass Dir)
+* `PHASE4_RESULTS=$00`
 
-The earlier SIO stall (stuck at `$66`) was resolved by the updated low-RAM SIO bridge in `kernal/start/start_atari.s`, which now enables NMIs (`NMIEN=$40`) and restores OS VBI vectors during the `SIOV` call. This allows OS timers to increment, enabling `SIOV` to complete and return.
+A minimal direct `jsr SIOV` diagnostic (without the bridge/full GEOS runtime
+context) passes under headless jsA8E, so the remaining gap is isolated to the
+full bridged runtime path. Keep jsA8E as the fast diagnostic loop and Altirra
+as the sign-off path for step closure.
 
 ### Cache-busting reload
 

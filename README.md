@@ -180,14 +180,16 @@ directly to the current Atari bring-up artifacts:
   breakpoint, and collect screenshot, trace, and `PHASE4_*` marker bytes.
 
 The automation API provides URL-native entry points, worker lifecycle
-acknowledgement, partial system-state reads, structured failure bundles, and
-cache-busting fetch controls. Force the main-thread backend with `?a8e_worker=0`
-if worker behavior is suspect.
+acknowledgement, partial system-state reads, structured failure bundles,
+cache-busting fetch/reload controls, and deterministic wait helpers
+(`waitForMemory`, frame/cycle waits). Force the main-thread backend with
+`?a8e_worker=0` if worker behavior is suspect.
 
 The remaining jsA8E Phase 4 blocker is no longer the old automation deadlock or
-XEX preflight — the rebased smoketest now reaches `$0881` — but the first
-resumed `ReadBlock` still stalls inside Atari OS SIO after the writable ATR is
-swapped into `D1:`.
+XEX preflight — the rebased smoketest reaches `$0881` consistently — but the
+full bridged `SIOV` runtime path still stalls after the writable ATR swap. The
+current reproducible marker state is `PHASE4_STAGE=$01`,
+`PHASE4_STATUS=$6B`, `PHASE4_ERROR=$00`, `PHASE4_RESULTS=$00`.
 
 Use the harness as the browser-side iteration path. Keep Altirra as the sign-off
 emulator for step completion and for any disk-path result that must match the
