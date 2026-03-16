@@ -545,11 +545,8 @@ $(BUILD_DIR)/phase4_disk_smoketest.xex: $(BUILD_DIR)/kernal/phase4_disk_smoketes
 	printf "\xFF\xFF" > $@
 	printf "\x80\x08\xFF\x1F" >> $@
 	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 count=6016 >> $@ 2> /dev/null
-	printf "\x00\x20\xFF\x4F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6848 count=12288 >> $@ 2> /dev/null
-	printf "\x00\x58\xFF\x67" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=19136 count=4090 >> $@ 2> /dev/null
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=35514 count=6 >> $@ 2> /dev/null
+	printf "\x00\x20\xFF\x5F" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6848 count=16384 >> $@ 2> /dev/null
 	printf "\x00\x90\x7F\x9D" >> $@
 	cat $(BUILD_DIR)/drv/$(DRIVE).bin /dev/zero | dd bs=1 count=3456 >> $@ 2> /dev/null
 	printf "\x80\x9D\xFF\x9F" >> $@

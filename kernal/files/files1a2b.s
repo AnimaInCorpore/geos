@@ -75,7 +75,9 @@ _ReadFile:
 .ifdef bsw128
 	LoadB config, CRAM64K
 .else
+.ifndef atarixl
 	LoadB CPU_DATA, RAM_64K
+.endif
 .endif
 .ifdef wheels_external_readwrite_file
 	; special case RAM area occupied by this code
@@ -95,7 +97,9 @@ _ReadFile:
 .ifdef bsw128
 	LoadB config, CIOIN
 .else
+.ifndef atarixl
 	LoadB CPU_DATA, KRNL_IO_IN
+.endif
 .endif
 	AddB r1L, r7L
 	bcc @5

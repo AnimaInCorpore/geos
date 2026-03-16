@@ -106,7 +106,6 @@ PHASE4_FILL_SRC    = BACK_SCR_BASE + $0800
 PHASE4_SMALL_LEN   = 600
 PHASE4_FILL_LEN    = 4096
 PHASE4_KERNAL_SRC0 = $2000
-PHASE4_KERNAL_SRC1 = $5800
 PHASE4_VARS_BASE   = $86c0
 PHASE4_VARS_SIZE   = $0940
 .endif
@@ -587,7 +586,7 @@ Phase4MarkFullPass:
 Phase4InstallHighKernal:
 	LoadW r0, PHASE4_KERNAL_SRC0
 	LoadW r1, $c000
-	ldx #$30
+	ldx #$40
 @page:
 	ldy #0
 @byte:
@@ -599,20 +598,6 @@ Phase4InstallHighKernal:
 	inc r1H
 	dex
 	bne @page
-	LoadW r0, PHASE4_KERNAL_SRC1
-	LoadW r1, $f000
-	ldx #$10
-@page1:
-	ldy #0
-@byte1:
-	lda (r0),y
-	sta (r1),y
-	iny
-	bne @byte1
-	inc r0H
-	inc r1H
-	dex
-	bne @page1
 	rts
 
 Phase4InstallRamVectors:
@@ -741,21 +726,21 @@ Phase4CheckDirectory:
 	sta PHASE4_DIRTYPE
 @haveEntryMeta:
 	inc PHASE4_DIRCOUNT
-	CmpBI PHASE4_DIRCOUNT, 1
-	bne @next
-	LoadW r0, Phase4SmallName
-	jsr Phase4MatchDirName
-	bnex @fail
 @next:
 	jsr GetNxtDirEntry
 	bnex @fail
 	tya
 	beq @scan
+	CmpBI PHASE4_DIRCOUNT, 0
+	beq @notFound
+	LoadW r6, Phase4SmallName
+	jsr FindFile
+	bnex @done
 	ldx #0
-	CmpBI PHASE4_DIRCOUNT, 1
-	beq @done
-	ldx #FILE_NOT_FOUND
 @done:
+	rts
+@notFound:
+	ldx #FILE_NOT_FOUND
 	rts
 @fail:
 	rts
@@ -776,7 +761,10 @@ Phase4MatchDirName:
 @pad:
 	lda (r1),y
 	cmp #$a0
+	beq @padNext
+	cmp #$00
 	bne @fail
+@padNext:
 	iny
 	cpy #16
 	bne @pad
@@ -1124,6 +1112,7 @@ Phase4SmallName:
 
 Phase4FillName:
 	.byte "PH4FIL0", 0
+
 .endif
 
 .ifdef atarixl_input_smoketest

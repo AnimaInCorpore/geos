@@ -30,6 +30,9 @@
 
 .ifdef atarixl_disk_smoketest
 PHASE4_STATUS = $04ec
+PHASE4_DBG_R2L = $04e4
+PHASE4_DBG_R2H = $04e5
+PHASE4_DBG_STEP = $04e6
 .endif
 
 .segment "files8"
@@ -50,14 +53,42 @@ _SaveFile:
 .ifdef wheels
 	bne @2
 .else
-	bnex @2
+	cpx #0
+	beq :+
+	jmp @2
+:
 .endif
 	.ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $72
+	MoveB r2L, PHASE4_DBG_R2L
+	MoveB r2H, PHASE4_DBG_R2H
+	LoadB PHASE4_DBG_STEP, $a0
 	.endif
 	jsr GetDAccLength
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $7a
+	MoveB r2L, PHASE4_DBG_R2L
+	MoveB r2H, PHASE4_DBG_R2H
+	LoadB PHASE4_DBG_STEP, $a1
+	.endif
 	jsr SetBufTSVector
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $7b
+	MoveB r2L, PHASE4_DBG_R2L
+	MoveB r2H, PHASE4_DBG_R2H
+	LoadB PHASE4_DBG_STEP, $a2
+	.endif
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $7c
+	LoadB PHASE4_DBG_STEP, $a3
+	.endif
 	jsr BlkAlloc
+	.ifdef atarixl_disk_smoketest
+	LoadB PHASE4_STATUS, $7d
+	MoveB r2L, PHASE4_DBG_R2L
+	MoveB r2H, PHASE4_DBG_R2H
+	LoadB PHASE4_DBG_STEP, $a4
+	.endif
 	bnex @2
 	.ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $73

@@ -78,7 +78,9 @@ DoWriteFile:
 .ifdef bsw128
 	LoadB config, CRAM64K
 .else
+.ifndef atarixl
 	LoadB CPU_DATA, RAM_64K
+.endif
 .endif
 .ifdef wheels_external_readwrite_file
 ; special case RAM area occupied by this code
@@ -99,7 +101,9 @@ DoWriteFile:
 .ifdef bsw128
 	LoadB config, CIOIN
 .else
+.ifndef atarixl
 	LoadB CPU_DATA, KRNL_IO_IN
+.endif
 .endif
 .ifdef wheels
 	jsr WriteBlock

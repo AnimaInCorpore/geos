@@ -2,7 +2,7 @@
 ; reassembled by Maciej 'YTM/Alliance' Witkowiak
 
 .ifdef atarixl
-zpage           =       $80
+zpage           =       $00
 GEOS_ZP_OFFSET  =       $7e
 CPU_DDR         =       $e0
 CPU_DATA        =       $e1

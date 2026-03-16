@@ -36,6 +36,25 @@ const ADDR_STATUS  = 0x04ec;
 const ADDR_ERROR   = 0x04ed;
 const ADDR_RESULTS = 0x04ee;
 const ADDR_DONE    = 0x04ef;
+const ADDR_SAVEFILE_JMP = 0xc1ed;
+const ADDR_BLKALLOC_JMP = 0xc1fc;
+const ADDR_BLKALLOC_PTR = 0x900e;
+const ADDR_STAGED_IRQ_SRC = 0x5211;
+const ADDR_R2 = 0x84;
+const ADDR_R4 = 0x88;
+const ADDR_CUR_DIR_HEAD = 0x8200;
+const ADDR_DBG_R2L = 0x04e4;
+const ADDR_DBG_R2H = 0x04e5;
+const ADDR_DBG_STEP = 0x04e6;
+const ADDR_DIRCOUNT = 0x04f0;
+const ADDR_DIRTYPE = 0x04f1;
+const ADDR_DIRNAME0 = 0x04f2;
+const ADDR_DIRNAME1 = 0x04f3;
+const ADDR_DIRNAME2 = 0x04f4;
+const ADDR_DIRNAME3 = 0x04f5;
+const ADDR_PHASE4_SMALL_SRC = 0x6000;
+const ADDR_PHASE4_SMALL_DST = 0x6400;
+const PHASE4_SMALL_LEN = 600;
 
 const PASS_ALL = 0x0f;
 
@@ -45,6 +64,10 @@ const BOOT_TIMEOUT_MS = 30_000;
 
 function hex2(v) {
   return ((v & 0xff) >>> 0).toString(16).toUpperCase().padStart(2, "0");
+}
+
+function hex4(v) {
+  return ((v & 0xffff) >>> 0).toString(16).toUpperCase().padStart(4, "0");
 }
 
 function stageName(s) {
@@ -142,6 +165,31 @@ async function main() {
     const status  = await api.debug.readMemory(ADDR_STATUS);
     const error   = await api.debug.readMemory(ADDR_ERROR);
     const results = await api.debug.readMemory(ADDR_RESULTS);
+    const r2Lo = await api.debug.readMemory(ADDR_R2);
+    const r2Hi = await api.debug.readMemory(ADDR_R2 + 1);
+    const r4Lo = await api.debug.readMemory(ADDR_R4);
+    const r4Hi = await api.debug.readMemory(ADDR_R4 + 1);
+    const dbgR2Lo = await api.debug.readMemory(ADDR_DBG_R2L);
+    const dbgR2Hi = await api.debug.readMemory(ADDR_DBG_R2H);
+    const dbgStep = await api.debug.readMemory(ADDR_DBG_STEP);
+    const dirCount = await api.debug.readMemory(ADDR_DIRCOUNT);
+    const dirType = await api.debug.readMemory(ADDR_DIRTYPE);
+    const dirName0 = await api.debug.readMemory(ADDR_DIRNAME0);
+    const dirName1 = await api.debug.readMemory(ADDR_DIRNAME1);
+    const dirName2 = await api.debug.readMemory(ADDR_DIRNAME2);
+    const dirName3 = await api.debug.readMemory(ADDR_DIRNAME3);
+    const curDirHead = await api.debug.readRange(ADDR_CUR_DIR_HEAD, 0x80);
+    let bamFree = null;
+    if (curDirHead && curDirHead.length >= 0x54) {
+      let sum = 0;
+      for (let track = 1; track <= 20; track++) {
+        if (track === 18) {
+          continue;
+        }
+        sum += curDirHead[4 + (track * 4)];
+      }
+      bamFree = sum;
+    }
 
     console.log("");
     console.log("=== Phase 4 Disk Smoketest Results ===");
@@ -154,18 +202,162 @@ async function main() {
                 " write=" + ((results >> 2) & 1) +
                 " full=" + ((results >> 3) & 1) + ")");
     console.log("PHASE4_DONE:    $" + hex2(done));
+    console.log("R2=$" + hex4((r2Hi << 8) | r2Lo) + "  R4=$" + hex4((r4Hi << 8) | r4Lo));
+    console.log("DBG_STEP=$" + hex2(dbgStep) + "  DBG_R2=$" + hex4((dbgR2Hi << 8) | dbgR2Lo));
+    console.log("DIRCOUNT=" + dirCount +
+                " DIRTYPE=$" + hex2(dirType) +
+                " DIRNAME=" +
+                String.fromCharCode(dirName0, dirName1, dirName2, dirName3));
+    if (bamFree !== null) {
+      console.log("curDirHead BAM free sum (tracks 1-20 excl 18): " + bamFree);
+      const sig = String.fromCharCode.apply(
+        null,
+        Array.from(curDirHead.slice(0xAB, 0xAB + 11))
+      ).replace(/\u0000/g, ".");
+      console.log("curDirHead signature[OFF_GS_ID..+10]: " + sig);
+    }
     console.log("");
 
     if (done === 0) {
       console.log("TIMEOUT — PHASE4_DONE never set after " +
                   (POLL_CHUNK * MAX_CHUNKS / 1e6).toFixed(0) + " M cycles");
       console.log("Stalled at stage: " + stageName(stage));
+      try {
+        const dbg = await api.debug.getDebugState();
+        const bank = await api.debug.getBankState();
+        const saveJmp = await api.debug.readRange(ADDR_SAVEFILE_JMP, 3);
+        const blkAllocJmp = await api.debug.readRange(ADDR_BLKALLOC_JMP, 3);
+        const blkAllocPtr = await api.debug.readRange(ADDR_BLKALLOC_PTR, 2);
+        const pcBytes = await api.debug.readRange(dbg.pc, 8);
+        const stagedIrqSrcBytes = await api.debug.readRange(ADDR_STAGED_IRQ_SRC, 8);
+        const irqVec = await api.debug.readRange(0xfffe, 2);
+        const brkPage = await api.debug.readRange(0x0000, 8);
+        const stackPage = await api.debug.readRange(0x0100, 0x100);
+        let disasm = null;
+        let saveTarget = null;
+        let saveTargetBytes = null;
+        let blkAllocTarget = null;
+        let blkAllocTargetBytes = null;
+        if (saveJmp && saveJmp.length === 3 && saveJmp[0] === 0x4c) {
+          saveTarget = saveJmp[1] | (saveJmp[2] << 8);
+          saveTargetBytes = await api.debug.readRange(saveTarget, 8);
+        }
+        console.log("DebugState: PC=$" + hex4(dbg.pc) +
+                    " A=$" + hex2(dbg.a) +
+                    " X=$" + hex2(dbg.x) +
+                    " Y=$" + hex2(dbg.y) +
+                    " SP=$" + hex2(dbg.sp) +
+                    " reason=" + String(dbg.reason || ""));
+        if (bank) {
+          console.log("BankState: " + JSON.stringify(bank));
+        }
+        if (saveJmp && saveJmp.length === 3) {
+          console.log("SaveFile JMP @ $C1ED: $" +
+                      hex2(saveJmp[0]) + " $" + hex2(saveJmp[1]) + " $" + hex2(saveJmp[2]));
+        }
+        if (saveTarget !== null && saveTargetBytes && saveTargetBytes.length) {
+          const targetHex = Array.from(saveTargetBytes)
+            .map(function (b) { return "$" + hex2(b); })
+            .join(" ");
+          console.log("SaveFile target bytes @ $" + hex4(saveTarget) + ": " + targetHex);
+        }
+        if (blkAllocJmp && blkAllocJmp.length === 3) {
+          console.log("BlkAlloc JMP @ $C1FC: $" +
+                      hex2(blkAllocJmp[0]) + " $" + hex2(blkAllocJmp[1]) + " $" + hex2(blkAllocJmp[2]));
+        }
+        if (blkAllocPtr && blkAllocPtr.length === 2) {
+          blkAllocTarget = blkAllocPtr[0] | (blkAllocPtr[1] << 8);
+          blkAllocTargetBytes = await api.debug.readRange(blkAllocTarget, 8);
+          console.log("BlkAlloc vector @ $900E: $" + hex4(blkAllocTarget));
+        }
+        if (blkAllocTarget !== null && blkAllocTargetBytes && blkAllocTargetBytes.length) {
+          const blkHex = Array.from(blkAllocTargetBytes)
+            .map(function (b) { return "$" + hex2(b); })
+            .join(" ");
+          console.log("BlkAlloc target bytes @ $" + hex4(blkAllocTarget) + ": " + blkHex);
+        }
+        if (pcBytes && pcBytes.length) {
+          const pcHex = Array.from(pcBytes).map(function (b) { return "$" + hex2(b); }).join(" ");
+          console.log("PC bytes @ $" + hex4(dbg.pc) + ": " + pcHex);
+        }
+        if (stagedIrqSrcBytes && stagedIrqSrcBytes.length) {
+          const srcHex = Array.from(stagedIrqSrcBytes).map(function (b) { return "$" + hex2(b); }).join(" ");
+          console.log("Staged IRQ src bytes @ $5211: " + srcHex);
+        }
+        if (irqVec && irqVec.length === 2) {
+          const iv = irqVec[0] | (irqVec[1] << 8);
+          console.log("IRQ/BRK vector @ $FFFE: $" + hex4(iv));
+        }
+        if (brkPage && brkPage.length) {
+          const brkHex = Array.from(brkPage).map(function (b) { return "$" + hex2(b); }).join(" ");
+          console.log("ZeroPage[0..7]: " + brkHex);
+        }
+        if (stackPage && stackPage.length === 0x100) {
+          const top = [];
+          const sp = dbg.sp & 0xff;
+          for (let i = 0; i < 16; i++) {
+            const off = (sp + 1 + i) & 0xff;
+            top.push("$" + hex4(0x0100 + off) + "=$" + hex2(stackPage[off]));
+          }
+          console.log("StackTop: " + top.join(" "));
+        }
+        try {
+          disasm = await api.debug.disassemble({ pc: dbg.pc, before: 3, after: 3 });
+        } catch (disErr) {
+          disasm = null;
+        }
+        if (disasm && Array.isArray(disasm.instructions)) {
+          const lines = disasm.instructions.map(function (insn) {
+            return "$" + hex4(insn.pc) + "  " +
+              (insn.bytesHex || "").padEnd(11) + "  " + (insn.text || "");
+          });
+          if (lines.length) {
+            console.log("Disasm:");
+            for (const line of lines) {
+              console.log("  " + line);
+            }
+          }
+        }
+      } catch (diagErr) {
+        console.log("Diagnostics unavailable: " +
+                    (diagErr && diagErr.message ? diagErr.message : String(diagErr)));
+      }
       process.exit(2);
     }
 
     if ((results & PASS_ALL) === PASS_ALL) {
       console.log("ALL PASS — directory, read, write, and disk-full all verified.");
       process.exit(0);
+    }
+
+    if (error === 0x2e) {
+      try {
+        const src = await api.debug.readRange(ADDR_PHASE4_SMALL_SRC, PHASE4_SMALL_LEN);
+        const dst = await api.debug.readRange(ADDR_PHASE4_SMALL_DST, PHASE4_SMALL_LEN);
+        let mismatch = -1;
+        for (let i = 0; i < PHASE4_SMALL_LEN; i++) {
+          if (src[i] !== dst[i]) {
+            mismatch = i;
+            break;
+          }
+        }
+        if (mismatch >= 0) {
+          console.log("BYTE_DEC_ERR first mismatch @" + mismatch +
+                      " src=$" + hex2(src[mismatch]) +
+                      " dst=$" + hex2(dst[mismatch]));
+          const previewLen = 16;
+          const srcPreview = Array.from(src.slice(0, previewLen)).map(hex2).join(" ");
+          const dstPreview = Array.from(dst.slice(0, previewLen)).map(hex2).join(" ");
+          console.log("SRC[0.." + (previewLen - 1) + "]: " + srcPreview);
+          console.log("DST[0.." + (previewLen - 1) + "]: " + dstPreview);
+        } else {
+          console.log("BYTE_DEC_ERR reported but source/destination buffers match over " +
+                      PHASE4_SMALL_LEN + " bytes.");
+        }
+      } catch (cmpErr) {
+        console.log("BYTE_DEC_ERR compare diagnostics unavailable: " +
+                    (cmpErr && cmpErr.message ? cmpErr.message : String(cmpErr)));
+      }
     }
 
     const missing = [];
