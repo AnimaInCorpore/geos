@@ -375,6 +375,12 @@ SioBridgeTemplate:
 .ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $6a
 .endif
+	; Force a clean serial state before each bridged SIOV call. This mirrors
+	; the standalone diagnostics path and avoids carrying stale SERIO state
+	; across earlier bootstrap transactions.
+	lda #$00
+	sta $0232 ; SSKCTL shadow
+	sta SKCTL
 	lda SIO_BRIDGE_SAVED_SSKCTL
 	sta $0232 ; SSKCTL
 	sta SKCTL
@@ -516,6 +522,10 @@ Phase4SmokeRun:
 	ldx #$e1
 	jmp Phase4SmokeFail
 @openDiskVisible:
+	; Re-assert RAM interrupt vectors after the ROM visibility probe.
+	; In jsA8E's Phase 4 path, the temporary PORTB flips can leave the
+	; underlying $FFFA-$FFFF RAM bytes stale before the first disk call.
+	jsr Phase4InstallRamVectors
 	LoadB PHASE4_STATUS, $f0
 	jsr OpenDisk
 	bnex Phase4SmokeFail
