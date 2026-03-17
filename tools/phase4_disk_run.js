@@ -24,7 +24,6 @@ const path = require("node:path");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const JSA8E_DIR = path.resolve(REPO_ROOT, "third_party/A8E/jsA8E");
-const ROM_DIR   = path.resolve(REPO_ROOT, "third_party/A8E");
 const BUILD_DIR = path.resolve(REPO_ROOT, "build/atarixl");
 
 const { createHeadlessAutomation } = require(path.join(JSA8E_DIR, "headless"));
@@ -62,6 +61,103 @@ const POLL_CHUNK      = 2_000_000;   // cycles per interval
 const MAX_CHUNKS      = 120;         // 240 M cycles ≈ ~135 s at 1.77 MHz
 const BOOT_TIMEOUT_MS = 30_000;
 
+function resolveInputPath(rawPath) {
+  if (!rawPath) {
+    return rawPath;
+  }
+  if (path.isAbsolute(rawPath)) {
+    return rawPath;
+  }
+  return path.resolve(REPO_ROOT, rawPath);
+}
+
+function parsePositiveInt(rawValue, optionName) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value <= 0 || Math.floor(value) !== value) {
+    throw new Error(optionName + " requires a positive integer");
+  }
+  return value;
+}
+
+function parseArgs(argv) {
+  const options = {
+    xexPath: resolveInputPath("build/atarixl/phase4_disk_smoketest.xex"),
+    diskPath: resolveInputPath("build/atarixl/phase4_disk_test.atr"),
+    osPath: resolveInputPath("third_party/A8E/ATARIXL.ROM"),
+    basicPath: resolveInputPath("third_party/A8E/ATARIBAS.ROM"),
+    pollChunk: POLL_CHUNK,
+    maxChunks: MAX_CHUNKS,
+    bootTimeoutMs: BOOT_TIMEOUT_MS,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--xex") {
+      i++;
+      if (i >= argv.length) throw new Error("--xex requires a path");
+      options.xexPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--disk") {
+      i++;
+      if (i >= argv.length) throw new Error("--disk requires a path");
+      options.diskPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--os-rom") {
+      i++;
+      if (i >= argv.length) throw new Error("--os-rom requires a path");
+      options.osPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--basic-rom") {
+      i++;
+      if (i >= argv.length) throw new Error("--basic-rom requires a path");
+      options.basicPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--no-basic") {
+      options.basicPath = "";
+      continue;
+    }
+    if (arg === "--poll-cycles") {
+      i++;
+      if (i >= argv.length) throw new Error("--poll-cycles requires a value");
+      options.pollChunk = parsePositiveInt(argv[i], "--poll-cycles");
+      continue;
+    }
+    if (arg === "--max-chunks") {
+      i++;
+      if (i >= argv.length) throw new Error("--max-chunks requires a value");
+      options.maxChunks = parsePositiveInt(argv[i], "--max-chunks");
+      continue;
+    }
+    if (arg === "--boot-timeout-ms") {
+      i++;
+      if (i >= argv.length) throw new Error("--boot-timeout-ms requires a value");
+      options.bootTimeoutMs = parsePositiveInt(argv[i], "--boot-timeout-ms");
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      console.log(
+        "Usage: node tools/phase4_disk_run.js [options]\n" +
+        "  --disk <path>            ATR to mount as D1\n" +
+        "  --xex <path>             smoketest XEX path\n" +
+        "  --os-rom <path>          Atari XL OS ROM path\n" +
+        "  --basic-rom <path>       Atari BASIC ROM path\n" +
+        "  --no-basic               Skip loading BASIC ROM\n" +
+        "  --poll-cycles <count>    Cycles per progress poll\n" +
+        "  --max-chunks <count>     Poll iterations before timeout\n" +
+        "  --boot-timeout-ms <ms>   Entry-breakpoint timeout"
+      );
+      process.exit(0);
+    }
+    throw new Error("Unknown option: " + arg);
+  }
+
+  return options;
+}
+
 function hex2(v) {
   return ((v & 0xff) >>> 0).toString(16).toUpperCase().padStart(2, "0");
 }
@@ -77,10 +173,11 @@ function stageName(s) {
 }
 
 async function main() {
-  const xexPath  = path.join(BUILD_DIR, "phase4_disk_smoketest.xex");
-  const diskPath = path.join(BUILD_DIR, "phase4_disk_test.atr");
-  const osPath   = path.join(ROM_DIR,  "ATARIXL.ROM");
-  const basPath  = path.join(ROM_DIR,  "ATARIBAS.ROM");
+  const options = parseArgs(process.argv.slice(2));
+  const xexPath = options.xexPath;
+  const diskPath = options.diskPath;
+  const osPath = options.osPath;
+  const basPath = options.basicPath;
 
   for (const [label, p] of [["XEX", xexPath], ["ATR", diskPath], ["OS ROM", osPath]]) {
     if (!fs.existsSync(p)) {
@@ -93,7 +190,7 @@ async function main() {
   const runtime = await createHeadlessAutomation({
     roms: {
       os:    osPath,
-      basic: fs.existsSync(basPath) ? basPath : undefined,
+      basic: basPath && fs.existsSync(basPath) ? basPath : undefined,
     },
     turbo:        true,
     sioTurbo:     false,
@@ -108,48 +205,51 @@ async function main() {
     const diskData = new Uint8Array(fs.readFileSync(diskPath));
 
     await api.debug.setBreakpoints([ENTRY_PC]);
-    console.log("Loading phase4_disk_smoketest.xex, waiting for entry at $" +
+    console.log("Loading " + path.basename(xexPath) + ", waiting for entry at $" +
                 ENTRY_PC.toString(16).toUpperCase() + "...");
 
     await api.dev.runXex({
       bytes:        xexData,
-      name:         "phase4_disk_smoketest.xex",
+      name:         path.basename(xexPath),
       awaitEntry:   false,
       start:        true,
       resetOptions: { portB: 0xff },
     });
 
-    const entryEvent = await api.debug.waitForBreakpoint({ timeoutMs: BOOT_TIMEOUT_MS });
+    const entryTimeout = options.bootTimeoutMs;
+    const entryEvent = await api.debug.waitForBreakpoint({ timeoutMs: entryTimeout });
     if (!entryEvent || !entryEvent.debugState) {
       console.error("FATAL: XEX did not reach entry breakpoint at $" +
                     ENTRY_PC.toString(16).toUpperCase() +
-                    " within " + (BOOT_TIMEOUT_MS / 1000) + "s");
+                    " within " + (entryTimeout / 1000) + "s");
       process.exit(3);
     }
     const ep = entryEvent.debugState;
     console.log("XEX reached entry: PC=$" +
                 ep.pc.toString(16).toUpperCase().padStart(4, "0"));
 
-    await api.media.mountDisk(diskData, { name: "phase4_disk_test.atr", slot: 0 });
+    await api.media.mountDisk(diskData, { name: path.basename(diskPath), slot: 0 });
     console.log("Mounted " + path.basename(diskPath) + " as D1:");
 
     await api.debug.setBreakpoints([]);
     await api.system.start();
 
-    console.log("Running up to " + (POLL_CHUNK * MAX_CHUNKS / 1e6).toFixed(0) +
+    const pollChunk = options.pollChunk;
+    const maxChunks = options.maxChunks;
+    console.log("Running up to " + (pollChunk * maxChunks / 1e6).toFixed(0) +
                 " M cycles for PHASE4_DONE...");
 
     let done = 0;
     let chunks = 0;
-    for (; chunks < MAX_CHUNKS && done === 0; chunks++) {
-      await api.system.waitForCycles({ count: POLL_CHUNK });
+    for (; chunks < maxChunks && done === 0; chunks++) {
+      await api.system.waitForCycles({ count: pollChunk });
       done    = await api.debug.readMemory(ADDR_DONE);
       const stage  = await api.debug.readMemory(ADDR_STAGE);
       const status = await api.debug.readMemory(ADDR_STATUS);
       const error  = await api.debug.readMemory(ADDR_ERROR);
       const res    = await api.debug.readMemory(ADDR_RESULTS);
       process.stdout.write(
-        "  chunk " + (chunks + 1) + "/" + MAX_CHUNKS +
+        "  chunk " + (chunks + 1) + "/" + maxChunks +
         "  stage=" + stageName(stage) +
         "  status=$" + hex2(status) +
         "  error=$" + hex2(error) +
@@ -220,7 +320,7 @@ async function main() {
 
     if (done === 0) {
       console.log("TIMEOUT — PHASE4_DONE never set after " +
-                  (POLL_CHUNK * MAX_CHUNKS / 1e6).toFixed(0) + " M cycles");
+                  (pollChunk * maxChunks / 1e6).toFixed(0) + " M cycles");
       console.log("Stalled at stage: " + stageName(stage));
       try {
         const dbg = await api.debug.getDebugState();

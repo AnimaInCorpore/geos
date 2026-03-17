@@ -331,6 +331,10 @@ atarixl-input-smoketest:
 atarixl-disk-smoketest:
 	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_disk_smoketest=1' build/atarixl/phase4_disk_smoketest.xex build/atarixl/phase4_disk_test.atr
 
+atarixl-disk-smoketest-matrix:
+	@$(MAKE) atarixl-disk-smoketest
+	node tools/phase4_disk_matrix_run.js
+
 atarixl-siov-minimal-test:
 	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari build/atarixl/siov_minimal_test.xex build/atarixl/phase4_disk_test.atr
 

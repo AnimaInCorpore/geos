@@ -185,15 +185,21 @@ cache-busting fetch/reload controls, and deterministic wait helpers
 (`waitForMemory`, frame/cycle waits). Force the main-thread backend with
 `?a8e_worker=0` if worker behavior is suspect.
 
-The remaining jsA8E Phase 4 blocker is no longer the old automation deadlock or
-XEX preflight — the rebased smoketest reaches `$0881` consistently — but the
-full bridged `SIOV` runtime path still stalls after the writable ATR swap. The
-current reproducible marker state is `PHASE4_STAGE=$01`,
-`PHASE4_STATUS=$6B`, `PHASE4_ERROR=$00`, `PHASE4_RESULTS=$00`.
+The jsA8E headless Phase 4 path now reaches end-to-end pass state
+(`PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`) on the current smoketest matrix.
+Altirra remains the required sign-off path before checking step completion.
 
 Use the harness as the browser-side iteration path. Keep Altirra as the sign-off
 emulator for step completion and for any disk-path result that must match the
 intended `D1:` boot configuration exactly.
+
+For repeatable headless Phase 4 evidence on multiple disk images, run:
+
+    make atarixl-disk-smoketest-matrix
+
+This rebuilds Atari artifacts, runs `tools/phase4_disk_run.js` against writable
+copies of `phase4_disk_test.atr`, `geos.atr`, and `blank_geos.atr`, and reports
+the `PHASE4_*` pass bits for each run.
 
 When jsA8E times out, keep the emitted progress checkpoints and the returned
 failure artifact bundle (debug state, trace tail, disassembly, mounted media,
