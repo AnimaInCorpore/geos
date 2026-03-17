@@ -43,7 +43,7 @@ Update rule: after each completed porting step, change exactly one matching chec
 
 - [x] 18. Write OS ROM disable stub in `start_atari.s`; test RAM at `$C000` after disable
 - [x] 19. Switch VBI handler to Mode B (direct NMI at `$FFFA`)
-- [ ] 20. Build a floppy/XEX bootstrap path that enters GEOS desktop without requiring a cartridge (PAL XL profile)
+- [x] 20. Build a floppy/XEX bootstrap path that enters GEOS desktop without requiring a cartridge (PAL XL profile)
 - [ ] 21. Verify GEOS desktop loads end-to-end from floppy bootstrap + disk image; then test on hardware
 
 ## Phase 6: Integration and polish
@@ -116,3 +116,4 @@ Update rule: after each completed porting step, change exactly one matching chec
 ### Phase 5 Notes
 
 - 2026-03-12: Completed steps 18 and 19 as part of startup-sequence refactor in commit 857adfd. `InstallAtariSioBridge` (OS vector snapshot) and `InstallDisableRomStub` / `jsr $0300` (ROM disable) are now called at the very top of `_ResetHandle`, before `InitAtariDisplay`, `InitAtariKeyboard`, or `InitAtariIRQ`. This ensures the GEOS kernal segments at `$C000-$FFFF` (pre-loaded into RAM by the XEX loader) become visible before any GEOS routines are called. `InitAtariIRQ` then writes `_NMIHandler` to `$FFFA`-`$FFFB` and `_IRQVectorHandler` to `$FFFE`-`$FFFF` in RAM, sets `NMIEN=$40`, completing the Mode B NMI switch. Interrupt dispatch vectors (`intTopVector`, `intBotVector`) are zeroed before `InitAtariIRQ` runs to prevent spurious `CallRoutine` calls on the first NMI. The Phase 4 disk smoketest validates step 18 by verifying `$C2A1=$6C` (a known kernal sentinel byte) after ROM disable.
+- 2026-03-17: Completed step 20 for the jsA8E PAL bootstrap path. `make atarixl-desktop-run` now builds `build/atarixl/phase5_desktop_bootstrap.xex` with desktop-smoketest markers, auto-extracts `DESK TOP` as a Convert file from `GEOS64/GEOS64.D64` when no explicit `ATARIXL_CVT_FILES` are supplied, and mounts `build/atarixl/geos.atr` by default in `tools/phase5_desktop_run.js`. Phase-5 control-flow fixes in `kernal/load/load1a.s` now preserve accumulator inputs across marker writes and jump directly to `_StartAppl` on successful desktop handoff. jsA8E evidence: `PHASE5_STATUS=$80` (`START_APPL`) reached in 31 chunks under the PAL XL runtime profile.

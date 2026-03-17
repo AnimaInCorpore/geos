@@ -10,6 +10,7 @@
 
 ; keyboard.s
 .import _DoKeyboardScan
+.import atari_dlist
 
 ; vars.s
 .import KbdQueFlag
@@ -30,6 +31,11 @@
 .global _NMIHandler
 
 .segment "irq_atari"
+
+ATARI_DMACTL_ACTIVE = $3E
+SDMCTL = $022F
+SDLSTL = $0230
+SDLSTH = $0231
 
 InitAtariIRQ:
 	lda #0
@@ -107,7 +113,6 @@ _NMIHandler:
 	rti
 
 @is_dli:
-	; TODO: DLI handler (mouse sampling)
 	sta NMIRES          ; acknowledge DLI; without this the NMI re-fires immediately
 	pla
 	rti
@@ -200,6 +205,7 @@ AtariIRQCore:
 	beq @skipAlarm
 	dec alarmWarnFlag
 @skipAlarm:
+	jsr MaintainAtariDisplay
 .ifdef wheels_screensaver
 	lda saverStatus
 	lsr
@@ -225,4 +231,24 @@ AtariIRQCore:
 	bpl @restoreZP
 	PopW returnAddress
 	PopW CallRLo
+	rts
+
+MaintainAtariDisplay:
+	lda #<_NMIHandler
+	sta $FFFA
+	lda #>_NMIHandler
+	sta $FFFB
+	lda #<_IRQVectorHandler
+	sta $FFFE
+	lda #>_IRQVectorHandler
+	sta $FFFF
+	lda #<atari_dlist
+	sta DLISTL
+	sta SDLSTL
+	lda #>atari_dlist
+	sta DLISTH
+	sta SDLSTH
+	lda #ATARI_DMACTL_ACTIVE
+	sta DMACTL
+	sta SDMCTL
 	rts

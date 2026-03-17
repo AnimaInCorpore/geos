@@ -163,8 +163,14 @@ CH       = $02FC ; OS keyboard shadow: $FF = no key pending, else ATASCII code
 KEYREP   = $02DA ; OS keyboard repeat counter
 
 ; Low-RAM ROM-banking bridge for OS-assisted SIO calls.
-; Keep the code and scratch below $3F40 so it does not overlap icon data.
+; The Phase 5 desktop bootstrap uses $0700-$0842 to avoid runtime overlap with
+; full GEOS desktop buffers in the $3Dxx page; other builds keep the bridge at
+; $3DC0 below icon data.
+.ifdef atarixl_desktop_smoketest
+SIO_BRIDGE_BASE        = $0700
+.else
 SIO_BRIDGE_BASE        = $3DC0
+.endif
 SIO_BRIDGE_SAVED_NMIEN = SIO_BRIDGE_BASE + $E0
 SIO_BRIDGE_SAVED_PBCTL = SIO_BRIDGE_BASE + $E1
 SIO_BRIDGE_SAVED_PORTB = SIO_BRIDGE_BASE + $E2

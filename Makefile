@@ -335,7 +335,18 @@ atarixl-disk-smoketest:
 	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_disk_smoketest=1' build/atarixl/phase4_disk_smoketest.xex build/atarixl/phase4_disk_test.atr
 
 atarixl-desktop-bootstrap:
-	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/phase4_disk_test.atr
+	@mkdir -p build/atarixl
+	@PHASE5_CVT="$(ATARIXL_CVT_FILES)"; \
+	if [ -z "$$PHASE5_CVT" ]; then \
+		if [ -e $(DESKTOP_CVT) ]; then \
+			PHASE5_CVT="$(DESKTOP_CVT)"; \
+		elif [ -e GEOS64/GEOS64.D64 ]; then \
+			echo "Extracting DESK TOP convert file from GEOS64/GEOS64.D64"; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "DESK TOP" build/atarixl/desktop.cvt >/dev/null; \
+			PHASE5_CVT="build/atarixl/desktop.cvt"; \
+		fi; \
+	fi; \
+	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/geos.atr
 
 atarixl-desktop-run:
 	@$(MAKE) atarixl-desktop-bootstrap

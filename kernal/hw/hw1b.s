@@ -9,6 +9,9 @@
 .include "config.inc"
 .include "kernal.inc"
 .include "c64.inc"
+.ifdef atarixl
+.include "atari.inc"
+.endif
 
 .import ResetMseRegion
 .import Init_KRNLVec
@@ -29,6 +32,26 @@
 .segment "hw1b"
 
 _DoFirstInitIO:
+.ifdef atarixl
+	; Atari variant: avoid C64 CPU/VIC/CIA initialization writes, which touch
+	; unrelated XL hardware aliases and can blank the display after desktop
+	; handoff.
+	ldx #7
+	lda #$ff
+@atariInitKbdTables:
+	sta KbdDMltTab,x
+	sta KbdDBncTab,x
+	dex
+	bpl @atariInitKbdTables
+	stx KbdQueFlag
+	inx
+	stx KbdQueHead
+	stx KbdQueTail
+	lda #$03
+	sta SKCTL
+	sta $0232 ; SSKCTL shadow used by the OS SIO path
+	jmp ResetMseRegion
+.else
 	LoadB CPU_DDR, $2f
 .ifdef bsw128
 	LoadB config, CIOIN
@@ -106,3 +129,4 @@ ASSERT_NOT_BELOW_IO
 .endif
 ASSERT_NOT_BELOW_IO
 	jmp ResetMseRegion
+.endif

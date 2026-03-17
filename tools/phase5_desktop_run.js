@@ -18,7 +18,7 @@
 //   $E1 desktop lookup/open path failed (for example missing DESK TOP on disk)
 //
 // Exit codes:
-//   0  Bootstrap reached desktop handoff ($70/$80)
+//   0  Bootstrap reached desktop handoff ($80)
 //   1  Bootstrap reached EnterDeskTop but desktop file load failed ($E1)
 //   2  TIMEOUT waiting for decisive status
 //   3  Fatal (missing files / API errors)
@@ -45,8 +45,8 @@ const ADDR_DBG_CURDRIVE = 0x04da;
 const ADDR_DBG_CURDEVICE = 0x04db;
 const ADDR_DBG_CURTYPE = 0x04dc;
 const ADDR_DBG_OD_STAGE = 0x04dd;
-const ADDR_SIO_BRIDGE = 0x3dc0;
-const ADDR_SIO_BRIDGE_SAVED_SSKCTL = 0x3ea5;
+const ADDR_SIO_BRIDGE = 0x0700;
+const ADDR_SIO_BRIDGE_SAVED_SSKCTL = 0x07e5;
 const ADDR_OS_SSKCTL_SHADOW = 0x0232;
 const ADDR_POKEY_SKCTL = 0xd20f;
 const ADDR_PORTB = 0xd301;
@@ -61,6 +61,23 @@ const ADDR_DRV_GET_DIR_HEAD = 0x901a;
 const ADDR_VEC_NMI = 0xfffa;
 const ADDR_VEC_RESET = 0xfffc;
 const ADDR_VEC_IRQ = 0xfffe;
+const ADDR_GEOS_R7 = 0x0090;
+const ADDR_GEOS_FILEHEADER = 0x8100;
+const ADDR_GEOS_APPMAIN = 0x849b;
+const OFF_GHST_ADDR = 71;
+const OFF_GHEND_ADDR = 73;
+const OFF_GHST_VEC = 75;
+const ADDR_ANTIC_DMACTL = 0xd400;
+const ADDR_ANTIC_DLISTL = 0xd402;
+const ADDR_ANTIC_DLISTH = 0xd403;
+const ADDR_OS_SDMCTL = 0x022f;
+const ADDR_OS_SDLSTL = 0x0230;
+const ADDR_OS_SDLSTH = 0x0231;
+const ADDR_GTIA_COLBK = 0xd01a;
+const ADDR_GTIA_COLPF0 = 0xd016;
+const ADDR_GTIA_COLPF1 = 0xd017;
+const ADDR_GTIA_COLPF2 = 0xd018;
+const ADDR_GTIA_COLPF3 = 0xd019;
 const POLL_CHUNK = 20_000;
 const MAX_CHUNKS = 500;
 const BOOT_TIMEOUT_MS = 30_000;
@@ -86,12 +103,14 @@ function parsePositiveInt(rawValue, optionName) {
 function parseArgs(argv) {
   const options = {
     xexPath: resolveInputPath("build/atarixl/phase5_desktop_bootstrap.xex"),
-    diskPath: resolveInputPath("build/atarixl/phase4_disk_test.atr"),
+    diskPath: resolveInputPath("build/atarixl/geos.atr"),
     osPath: resolveInputPath("third_party/A8E/ATARIXL.ROM"),
     basicPath: resolveInputPath("third_party/A8E/ATARIBAS.ROM"),
     pollChunk: POLL_CHUNK,
     maxChunks: MAX_CHUNKS,
     bootTimeoutMs: BOOT_TIMEOUT_MS,
+    postCycles: 0,
+    screenshotPath: "",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -142,6 +161,18 @@ function parseArgs(argv) {
       options.bootTimeoutMs = parsePositiveInt(argv[i], "--boot-timeout-ms");
       continue;
     }
+    if (arg === "--post-cycles") {
+      i++;
+      if (i >= argv.length) throw new Error("--post-cycles requires a value");
+      options.postCycles = parsePositiveInt(argv[i], "--post-cycles");
+      continue;
+    }
+    if (arg === "--screenshot") {
+      i++;
+      if (i >= argv.length) throw new Error("--screenshot requires a path");
+      options.screenshotPath = resolveInputPath(argv[i]);
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       console.log(
         "Usage: node tools/phase5_desktop_run.js [options]\n" +
@@ -152,7 +183,9 @@ function parseArgs(argv) {
         "  --no-basic               Skip loading BASIC ROM\n" +
         "  --poll-cycles <count>    Cycles per progress poll\n" +
         "  --max-chunks <count>     Poll iterations before timeout\n" +
-        "  --boot-timeout-ms <ms>   Entry-breakpoint timeout"
+        "  --boot-timeout-ms <ms>   Entry-breakpoint timeout\n" +
+        "  --post-cycles <count>    Extra cycles before pause/artifacts\n" +
+        "  --screenshot <path>      Save a PNG screenshot artifact"
       );
       process.exit(0);
     }
@@ -268,7 +301,6 @@ async function main() {
         " ($" + hex2(status) + ")\r"
       );
       if (
-        status === 0x70 ||
         status === 0x80 ||
         status === 0xe1 ||
         status === 0xe2 ||
@@ -281,6 +313,10 @@ async function main() {
       }
     }
     process.stdout.write("\n");
+
+    if (decisive && options.postCycles > 0) {
+      await api.system.waitForCycles({ count: options.postCycles });
+    }
 
     await api.system.pause();
     const debugState = await api.debug.getDebugState();
@@ -315,6 +351,24 @@ async function main() {
     const copyFStringImplBytes = await readBytes(api, ADDR_COPYFSTRING_IMPL, 8);
     const getPtrImplBytes = await readBytes(api, ADDR_GETPTR_IMPL, 8);
     const stageCopyFStringBytes = await readBytes(api, ADDR_STAGE_COPYFSTRING, 8);
+    const geosR7 = await readWord(api, ADDR_GEOS_R7);
+    const geosAppMain = await readWord(api, ADDR_GEOS_APPMAIN);
+    const geosStart = await readWord(api, ADDR_GEOS_FILEHEADER + OFF_GHST_ADDR);
+    const geosEnd = await readWord(api, ADDR_GEOS_FILEHEADER + OFF_GHEND_ADDR);
+    const geosVec = await readWord(api, ADDR_GEOS_FILEHEADER + OFF_GHST_VEC);
+    const geosHdr0 = await readBytes(api, ADDR_GEOS_FILEHEADER, 8);
+    const geosHdr64 = await readBytes(api, ADDR_GEOS_FILEHEADER + 64, 24);
+    const startBytes = await readBytes(api, geosStart, 8);
+    const vecBytes = await readBytes(api, geosVec, 8);
+    const dmactl = await api.debug.readMemory(ADDR_ANTIC_DMACTL);
+    const dlist = await readWord(api, ADDR_ANTIC_DLISTL);
+    const sdmctl = await api.debug.readMemory(ADDR_OS_SDMCTL);
+    const sdlst = await readWord(api, ADDR_OS_SDLSTL);
+    const colbk = await api.debug.readMemory(ADDR_GTIA_COLBK);
+    const colpf0 = await api.debug.readMemory(ADDR_GTIA_COLPF0);
+    const colpf1 = await api.debug.readMemory(ADDR_GTIA_COLPF1);
+    const colpf2 = await api.debug.readMemory(ADDR_GTIA_COLPF2);
+    const colpf3 = await api.debug.readMemory(ADDR_GTIA_COLPF3);
 
     console.log("");
     console.log("=== Phase 5 Desktop Bootstrap Status ===");
@@ -349,8 +403,36 @@ async function main() {
     console.log("CopyFString impl @A421: " + copyFStringImplBytes.map(hex2).join(" "));
     console.log("Staged CopyFString @3421: " + stageCopyFStringBytes.map(hex2).join(" "));
     console.log("GetPtrCurDkNm impl @C30E: " + getPtrImplBytes.map(hex2).join(" "));
+    console.log("GEOS file header: start=$" + hex4(geosStart) +
+      " end=$" + hex4(geosEnd) +
+      " vec=$" + hex4(geosVec) +
+      " r7=$" + hex4(geosR7) +
+      " appMain=$" + hex4(geosAppMain));
+    console.log("GEOS header [00..07]: " + geosHdr0.map(hex2).join(" "));
+    console.log("GEOS header [40..57]: " + geosHdr64.map(hex2).join(" "));
+    console.log("GEOS start bytes: " + startBytes.map(hex2).join(" "));
+    console.log("GEOS vec bytes:   " + vecBytes.map(hex2).join(" "));
+    console.log("Display regs: DMACTL=$" + hex2(dmactl) +
+      " DLIST=$" + hex4(dlist) +
+      " SDMCTL=$" + hex2(sdmctl) +
+      " SDLST=$" + hex4(sdlst));
+    console.log("Colors: COLBK=$" + hex2(colbk) +
+      " PF0=$" + hex2(colpf0) +
+      " PF1=$" + hex2(colpf1) +
+      " PF2=$" + hex2(colpf2) +
+      " PF3=$" + hex2(colpf3));
     console.log("Stack $01F0-$01FF: " + stackTop.map(hex2).join(" "));
     console.log("");
+
+    if (options.screenshotPath) {
+      const shot = await api.artifacts.captureScreenshot();
+      const png = Buffer.from(shot.base64 || "", "base64");
+      fs.mkdirSync(path.dirname(options.screenshotPath), { recursive: true });
+      fs.writeFileSync(options.screenshotPath, png);
+      console.log("Saved screenshot: " + options.screenshotPath +
+        " (" + ((shot.width | 0) + "x" + (shot.height | 0)) + ")");
+      console.log("");
+    }
 
     if (!decisive) {
       console.log("TIMEOUT — bootstrap did not reach a decisive desktop status.");

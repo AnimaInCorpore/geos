@@ -16,6 +16,7 @@
 .global AtariRowBaseHi
 .global AtariBackRowBaseLo
 .global AtariBackRowBaseHi
+.global atari_dlist
 
 BITMAP_LMS0 = BITMAP_BASE
 BITMAP_LMS1 = BITMAP_BASE + $1000
