@@ -11,6 +11,7 @@
 ; keyboard.s
 .import _DoKeyboardScan
 .import atari_dlist
+.import _ResetHandle
 
 ; vars.s
 .import KbdQueFlag
@@ -238,6 +239,10 @@ MaintainAtariDisplay:
 	sta $FFFA
 	lda #>_NMIHandler
 	sta $FFFB
+	lda #<_ResetHandle
+	sta $FFFC
+	lda #>_ResetHandle
+	sta $FFFD
 	lda #<_IRQVectorHandler
 	sta $FFFE
 	lda #>_IRQVectorHandler

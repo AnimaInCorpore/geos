@@ -917,16 +917,14 @@ SioError:
 	jmp MapSIOError
 
 SetupSioDCB:
-	lda curDrive
-	cmp #8
-	bcc @driveIndexReady
-	sec
-	sbc #8
-@driveIndexReady:
-	clc
-	adc #$31
+	lda #$31
 	sta DDEVIC
+	lda curDrive
+	sec
+	sbc #7
+	bcs @unitReady
 	lda #1
+@unitReady:
 	sta DUNIT
 	lda #SIO_TIMEOUT_SECONDS
 	sta DTIMLO

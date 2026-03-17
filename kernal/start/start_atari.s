@@ -340,6 +340,7 @@ InstallDisableRomStub:
 
 DisableRomStubTemplate:
 	lda PORTB
+	ora #$82
 	and #$fe
 	sta PORTB
 	rts

@@ -396,7 +396,7 @@ async function main() {
     console.log("DCB DDEVIC=$" + hex2(dcbDevic) + " DUNIT=$" + hex2(dcbUnit));
     console.log("curDrive=$" + hex2(curDriveDbg) + " curDevice=$" + hex2(curDeviceDbg) + " curType=$" + hex2(curTypeDbg));
     console.log("OpenDisk stage=$" + hex2(openDiskStage));
-    console.log("SIO bridge @3DC0: " + bridgeBytes.map(hex2).join(" "));
+    console.log("SIO bridge @$" + hex4(ADDR_SIO_BRIDGE) + ": " + bridgeBytes.map(hex2).join(" "));
     console.log("SSKCTL saved=$" + hex2(savedSskctl) + " OS=$" + hex2(osSskctl) + " POKEY=$" + hex2(pokeySkctl));
     console.log("PORTB=$" + hex2(portb) + " GetPtrCurDkNm JMP bytes: " + getPtrBytes.map(hex2).join(" "));
     console.log("CopyFString @C268: " + copyFStringBytes.map(hex2).join(" "));

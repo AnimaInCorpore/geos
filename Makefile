@@ -499,7 +499,10 @@ $(BUILD_DIR)/input/koalapad.bin: $(BUILD_DIR)/input/koalapad.o $(INPUTCFG) $(DEP
 $(BUILD_DIR)/input/pcanalog.bin: $(BUILD_DIR)/input/pcanalog.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/pcanalog.o -o $@
 
-$(BUILD_FLAGS_FILE): Makefile
+.PHONY: FORCE
+FORCE:
+
+$(BUILD_FLAGS_FILE): Makefile FORCE
 	@mkdir -p $$(dirname $@)
 	@printf '%s\n' \
 		'VARIANT=$(VARIANT)' \
