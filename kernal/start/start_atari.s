@@ -584,9 +584,16 @@ Phase4MarkFullPass:
 
 ; Install the staged $C000-$FFFF image from conventional RAM after ROM is disabled.
 Phase4InstallHighKernal:
+	; Atari keeps $D000-$D7FF mapped to I/O registers regardless of PORTB.
+	; Copy around that hole so we do not scribble GTIA/POKEY/PIA/ANTIC state
+	; and accidentally remap ROM while installing the staged kernal image.
+	;
+	; Source layout at $2000 mirrors $C000-$FFFF contiguously, so:
+	;   $2000-$2FFF -> $C000-$CFFF
+	;   $3800-$5FFF -> $D800-$FFFF
 	LoadW r0, PHASE4_KERNAL_SRC0
 	LoadW r1, $c000
-	ldx #$40
+	ldx #$10
 @page:
 	ldy #0
 @byte:
@@ -598,6 +605,21 @@ Phase4InstallHighKernal:
 	inc r1H
 	dex
 	bne @page
+
+	LoadW r0, (PHASE4_KERNAL_SRC0 + $1800)
+	LoadW r1, $d800
+	ldx #$28
+@pageHi:
+	ldy #0
+@byteHi:
+	lda (r0),y
+	sta (r1),y
+	iny
+	bne @byteHi
+	inc r0H
+	inc r1H
+	dex
+	bne @pageHi
 	rts
 
 Phase4InstallRamVectors:

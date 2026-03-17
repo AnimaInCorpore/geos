@@ -477,6 +477,7 @@ __SetNextFree:
 	sta r6H
 	MoveB r3L, r6L
 	jsr NormalizeAtariSector
+	sta r6H
 SNxtFreeTrack:
 	CmpBI r6L, N_TRACKS+1
 	bcs SNxtFree5
@@ -484,10 +485,11 @@ SNxtFreeTrack:
 	beq SNxtFreeNextTrack
 	ldy #18
 SNxtFreeScan:
-	jsr FindBAMBit
-	beq SNxtFree4
+	jsr _AllocateBlock
+	beqx SNxtFree4
 	inc r6H
 	jsr NormalizeAtariSector
+	sta r6H
 	dey
 	bne SNxtFreeScan
 SNxtFreeNextTrack:
@@ -579,9 +581,9 @@ CBlksFre1:
 	clc
 	adc #4
 	tay
-	cpy #(OFF_TO_BAM + (DIR_TRACK * 4))
+	cpy #(OFF_TO_BAM + ((DIR_TRACK - 1) * 4))
 	beq CBlksFre1
-	cpy #(OFF_TO_BAM + ((N_TRACKS + 1) * 4))
+	cpy #(OFF_TO_BAM + (N_TRACKS * 4))
 	bne CBlksFre0
 	LoadW r3, TOTAL_BLOCKS
 	rts
@@ -647,7 +649,6 @@ __InitForIO:
 	rts
 
 __DoneWithIO:
-	ldx #0
 	rts
 
 __EnterTurbo:
@@ -755,6 +756,7 @@ GetDOSError_OK:
 ; Input: r1 = GEOS block address in C64 track/sector form, r4 = transfer buffer.
 ; Uses: sioCommand/sioDirection to select read vs. write command.
 ReadWrite256:
+	PushW r2
 	jsr TrackSectorToLogicalBlock
 	bcc ReadWriteBadParams
 
@@ -785,9 +787,11 @@ ReadWrite256:
 @bufferReady:
 	jsr DoSioSectorIO
 ReadWriteDone:
+	PopW r2
 	rts
 
 ReadWriteBadParams:
+	PopW r2
 	ldx #INV_TRACK
 	rts
 
