@@ -39,23 +39,29 @@ Update rule: after each completed porting step, change exactly one matching chec
 - [x] 16. Audit and fix all `$FE`/`#254` sector-payload literals in `kernal/files/` (see section 6.7 in `PORTING.md`)
 - [ ] 17. Test: directory listing, file read, file write, disk full detection
 
-## Phase 5: Cartridge boot and ROM-off
+## Phase 5: ROM-off desktop (floppy-first, no mandatory cartridge)
 
 - [x] 18. Write OS ROM disable stub in `start_atari.s`; test RAM at `$C000` after disable
 - [x] 19. Switch VBI handler to Mode B (direct NMI at `$FFFA`)
-- [ ] 20. Create 8 KB cartridge ROM image for `$A000-$BFFF`; test cold-boot in Altirra
-- [ ] 21. Verify GEOS desktop loads end-to-end from cartridge + floppy; then test on hardware
+- [ ] 20. Build a floppy/XEX bootstrap path that enters GEOS desktop without requiring a cartridge (PAL XL profile)
+- [ ] 21. Verify GEOS desktop loads end-to-end from floppy bootstrap + disk image; then test on hardware
 
 ## Phase 6: Integration and polish
 
 - [x] 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
-- [ ] 23. Connect VBI counter to `kernal/time/` clock routines
+- [x] 23. Connect VBI counter to `kernal/time/` clock routines
 - [ ] 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
 - [ ] 25. Regression-test all graphics, font, menu, dialog, and file operations
 - [ ] 26. Tune timing loops (Atari 1.79 MHz vs C64 1 MHz; cycle-count-dependent delays differ)
 
+## Phase 7: Optional cartridge packaging
+
+- [ ] 27. Create 8 KB cartridge ROM image for `$A000-$BFFF`; test cold-boot in Altirra
+- [ ] 28. Verify GEOS desktop loads end-to-end from cartridge + floppy; then repeat hardware sign-off
+
 ### Phase 6 Notes
 
+- 2026-03-17: Completed step 23 by replacing the Atari build's CIA-based `_DoUpdateTime` path in `kernal/time/time1.s` with a VBI-backed clock path. The Atari path now reads `RTCLOK` (`$12-$14`), accumulates elapsed VBI ticks using PAL/NTSC-aware thresholds (`PAL_R` bit 3 => 50/60 Hz), advances `seconds/minutes/hour`, and calls `DateUpdate` on midnight rollover. Added Atari clock state variables (`atariClockInit`, `atariClockSubTicks`, `atariRtcDelta*`, `atariRtcLast*`) to `kernal/vars/vars.s`, and replaced the Atari alarm-audio branch with a hardware-safe countdown stub that avoids SID writes. Validation: `make clean && make -j4 atarixl`; `make clean && make atarixl-disk-smoketest && node tools/phase4_disk_run.js` (PASS: `PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`).
 - 2026-03-17: Completed step 22 by replacing the Atari build's C64 VIC-II sprite path with a dedicated P/M implementation in `kernal/sprites/sprites_atari.s` and wiring it in `Makefile` (`VARIANT=atarixl` now links `sprites_atari.s`, non-Atari builds still link `sprites.s`). The new Atari sprite layer maps GEOS sprite 0 to player 0+1 (16-pixel cursor) and sprite 1 to player 2 (text prompt), preserving `DrawSprite`/`PosSprite`/`EnablSprite`/`DisablSprite` syscall contracts while rendering from GEOS sprite bitmaps into PM memory at `$7800`.
 - 2026-03-17: Updated Atari P/M init in `kernal/hw/hw_atari.s` to fully reset player/missile registers before enable, including explicit clears of `GRAFP0_W`..`GRAFP3_W` and `GRAFM_W`, and enabled P/M DMA in the normal display path (`DMACTL=$3E`).
 - 2026-03-17: Desktop/UI Atari safety follow-ups: removed direct C64 sprite-register save/restore writes from Atari dialog paths (`kernal/dlgbox/dlgbox1c.s`, `kernal/dlgbox/dlgbox1d.s`), added Atari-safe text prompt sprite init path in `kernal/conio/conio5.s`, and switched Atari init color writes in `kernal/init/init2.s` to GTIA player colors.

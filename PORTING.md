@@ -1,7 +1,8 @@
 # Porting GEOS to Atari 800 XL
 
 This document describes the work required to port the GEOS kernel from Commodore 64
-to the Atari 800 XL (64 KB RAM, cartridge boot, Atari 810/1050 floppy drive).
+to the Atari 800 XL (64 KB RAM, floppy-first boot, Atari 810/1050 floppy drive, and
+an optional later cartridge boot phase).
 
 First-release target platform: **PAL Atari 800 XL**. NTSC support is a follow-up
 compatibility phase after the PAL baseline is stable.
@@ -67,7 +68,7 @@ $5F50–$7FFF  Back screen buffer, printer buffer, application heap
 $8000–$8FFF  OS variables, disk buffers (same layout as C64)
 $9000–$9D7F  Disk driver (new Atari SIO driver)
 $9D80–$9FFF  Low KERNAL (lokernal, largely unchanged)
-$A000–$BFFF  Cartridge ROM: bootstrap loader (stays as ROM throughout runtime)
+$A000–$BFFF  Bootstrap window: RAM in floppy-first v1; cartridge ROM in optional cart builds
 $C000–$CFFF  GEOS KERNAL main code (Atari OS ROM disabled; RAM used here)
 $D000–$D7FF  Atari hardware I/O: GTIA, POKEY, PIA, ANTIC
 $D800–$DFFF  RAM (exposed when OS ROM is disabled; this is FP ROM only while bit 0 of PORTB remains set)
@@ -88,9 +89,9 @@ and writes to `$FD00` are ignored. Move/copy it to `$FD00` only in Phase 5 after
 OS ROM is disabled.
 
 **Key constraint:** The Atari OS ROM occupies $C000–$FFFF and must be **disabled** by
-writing to PORTB ($D301) before GEOS code in that range can execute. BASIC ROM
-($A000–$BFFF) is replaced by the cartridge, so it is automatically inactive when a
-cartridge is present.
+writing to PORTB ($D301) before GEOS code in that range can execute. In floppy-first
+v1 boot, BASIC ROM at $A000–$BFFF must also be disabled (PORTB bit 1 = 1) so RAM is
+visible in that window.
 
 **XL/XE self-test caveat (OS-assisted phases):** XL/XE self-test can map ROM over
 `$5000–$57FF`, which overlaps the second bitmap segment. During Phases 2–4, avoid
@@ -129,7 +130,13 @@ Tested operation masks (read-modify-write to preserve other bits):
 
 ---
 
-## 3. Cartridge Boot Strategy
+## 3. Boot Strategy (Floppy-First Baseline, Cartridge Optional)
+
+First-release baseline in this plan is floppy/XEX boot to GEOS desktop with no
+mandatory cartridge. Cartridge boot remains an optional later packaging phase for
+faster cold-start and appliance-like deployment.
+
+### Optional cartridge boot details
 
 An Atari 800 XL cartridge occupies $A000–$BFFF (8 KB). This is electrically
 equivalent to the original Atari 800 left slot; the Atari 800 right slot maps to
@@ -144,7 +151,7 @@ header lives at the top of the ROM:
 Call order: the OS first JSRs to the INIT address (if the flag byte at $BFFC indicates
 an INIT is present), waits for it to RTS, then JMPs to the RUN address.
 
-### Bootstrap cartridge boot flow (8 KB ROM)
+### Bootstrap cartridge boot flow (8 KB ROM, optional phase)
 
 The cartridge ROM remains visible at $A000–$BFFF throughout execution (standard Atari
 cartridges cannot be disabled from software). The GEOS KERNAL is therefore loaded into
@@ -190,7 +197,7 @@ the same base address as the C64 ($C000).
 | KERNAL main | $C100–$FF?? | Link-map dependent | Stage in low RAM, then copy to $C100–$CFFF + $E000–$FCFF |
 | Input driver | $FE80–$FFFA | ~384 bytes | Stage in low RAM, then copy to $FD00–$FE7F after OS-off |
 
-### Alternative: 16 KB bankswitched cartridge ($8000–$BFFF)
+### Alternative: 16 KB bankswitched cartridge ($8000–$BFFF, optional)
 
 - Bank 0 ($8000–$9FFF): Bootstrap + enough code to disable OS ROM and load drivers
 - Bank 1 ($A000–$BFFF): Reserved or additional font/data ROM
@@ -1392,7 +1399,7 @@ Preferred jsA8E iteration path (repeatable evidence and diagnostics; not Altirra
 - When boot state matters, use the reset-time bank override support (`system.reset({ portB: $FF })`, `system.boot({ portB: $FF })`, or `dev.runXex({ ..., resetOptions: { portB: $FF } })`) so the harness can rule out XL self-test / ROM-mapping issues before treating a failure as a GEOS regression.
 - For browser retries, prefer `system.reload({ cacheBust: true })` (or explicit `cacheBust` fetch options) before attributing stale behavior to GEOS changes.
 - Treat schema-versioned failure bundles (`artifactSchemaVersion: "2"`) as the default evidence format; they include debug state, bank state, mounted media, console-key state, trace tail, optional disassembly/source context, and optional screenshots.
-- Keep Altirra as the required sign-off path for steps that explicitly call it out (for example 8, 9, 17, 20, and 21).
+- Keep Altirra as the required sign-off path for steps that explicitly call it out (for example 8, 9, 17, 21, 27, and 28).
 - Treat the jsA8E Phase 4 flow as a diagnostic path only, because it still approximates the final setup by swapping `D1:` after the XEX loader reaches the rebased `$0881` smoke entry point.
 
 ### Phase 3: Bring up input (OS-assisted mode)
@@ -1429,14 +1436,14 @@ Phase 4 gate before considering step 17 done:
 - Require the smoke path to advance past `OpenDisk -> GetDirHead -> EnterTurbo -> ReadBlock`. If a stop occurs earlier, capture the structured failure bundle and resolve that earlier boot/runtime fault before attributing the failure to `drv1050` or GEOS file-system logic.
 - Only sign off step 17 after directory listing, sequential file read/write, and disk-full detection all pass on Atari `.atr` images such as `build/atarixl/geos.atr` and `build/atarixl/blank_geos.atr`.
 
-### Phase 5: Cartridge boot and ROM-off
+### Phase 5: ROM-off desktop (floppy-first, no mandatory cartridge)
 18. Write OS ROM disable stub in `start_atari.s`; test RAM at $C000 after disable using the existing low-RAM staging/copy-under-ROM path
 19. Switch VBI handler to Mode B (direct NMI at $FFFA)
-20. Create 8 KB cartridge ROM image for $A000–$BFFF; test cold-boot in Altirra **PAL XL** profile
-21. Verify GEOS desktop loads end-to-end from cartridge + floppy; then test on **PAL** hardware
+20. Build a floppy/XEX bootstrap path that enters GEOS desktop without requiring a cartridge (PAL XL profile)
+21. Verify GEOS desktop loads end-to-end from floppy bootstrap + disk image; then test on **PAL** hardware
 
 Phase 5 prerequisites and disk rule:
-- Do not start ROM-disable/cartridge work until Phase 4 disk I/O succeeds end-to-end with OS ROM enabled in Altirra. Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary iteration path for faster, deterministic smoke runs — no browser or HTTP server needed. Fall back to the browser path only for visual inspection or when a problem does not reproduce headless.
+- Do not start ROM-disable desktop work until Phase 4 disk I/O succeeds end-to-end with OS ROM enabled in Altirra. Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary iteration path for faster, deterministic smoke runs — no browser or HTTP server needed. Fall back to the browser path only for visual inspection or when a problem does not reproduce headless.
 - Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Reuse the Phase 4 staging/copy-under-ROM path and do not block Phase 5 on raw POKEY SIO.
 - If a raw-SIO optimisation path is prototyped in Phase 5 or later, calculate the POKEY baud-rate divisor against the **PAL clock (~1.773 MHz)**, not the NTSC figure (~1.790 MHz). Standard Atari SIO at 19,200 baud: `divisor = (1,773,000 / (2 × 19,200)) − 7 ≈ 39`. Using the NTSC divisor (~40) on PAL hardware shifts the baud rate by ~1%, which is within tolerance for most drives but will cause framing errors on marginal hardware.
 
@@ -1446,6 +1453,10 @@ Phase 5 prerequisites and disk rule:
 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
 25. Regression-test all graphics, font, menu, dialog, and file operations
 26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80×)
+
+### Phase 7: Optional cartridge packaging
+27. Create 8 KB cartridge ROM image for $A000–$BFFF; test cold-boot in Altirra **PAL XL** profile
+28. Verify GEOS desktop loads end-to-end from cartridge + floppy; then repeat PAL hardware sign-off
 
 Step 22 P/M init requirement:
 - Zero GRAFM_W ($D011) alongside GRAFPx during P/M setup. This register controls
@@ -1471,11 +1482,11 @@ Phase 6 regression note:
 hard-codes zero-page addresses must be updated. Run a thorough grep for numeric
 ZP references before declaring Phase 1 complete.
 
-**Cartridge at $A000–$BFFF.** Standard Atari cartridges cannot be disabled from
-software, so $A000–$BFFF remains cartridge ROM throughout execution. The GEOS
-KERNAL must therefore live at $C000+ (same as C64), in the space vacated by the
-Atari OS ROM after it is disabled. Do not attempt to place writable KERNAL data at
-$A000–$BFFF.
+**$A000–$BFFF ownership depends on boot mode.** In floppy-first v1, keep BASIC off so
+this window is RAM and avoid relying on cartridge presence. In optional cartridge
+builds, standard Atari cartridges cannot be disabled from software, so `$A000–$BFFF`
+remains ROM throughout execution. In both modes, keep writable KERNAL/runtime state
+out of `$A000–$BFFF`.
 
 **Framebuffer layout mismatch.** C64 bitmap-address math is VIC-II tiled
 (`(y>>3)*320 + (x>>3)*8 + (y&7)`), but Atari mode `$0F` is linear

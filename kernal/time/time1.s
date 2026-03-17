@@ -8,8 +8,24 @@
 .include "geosmac.inc"
 .include "config.inc"
 .include "kernal.inc"
+.ifdef atarixl
+.include "atari.inc"
+.else
 .include "c64.inc"
+.endif
 
+.ifdef atarixl
+.import atariClockInit
+.import atariClockSubTicks
+.import atariRtcDeltaLo
+.import atariRtcDeltaMid
+.import atariRtcDeltaHi
+.import atariRtcLastLo
+.import atariRtcLastMid
+.import atariRtcLastHi
+.import nmiDisableDepth
+.import nmiEnableMask
+.endif
 .import pingTab
 .import pingTabEnd
 .import alarmWarnFlag
@@ -20,6 +36,107 @@
 .segment "time1"
 
 _DoUpdateTime:
+.ifdef atarixl
+	; Atari path: derive wall-clock time from the VBI tick counter.
+	; RTCLOK is incremented once per VBI by OS (Mode A) or by TickAtariTimers
+	; in irq_atari.s (Mode B / ROM-off).
+	DISABLE_NMI
+	lda atariClockInit
+	bne @haveClockState
+	lda RTCLOK+2
+	sta atariRtcLastLo
+	lda RTCLOK+1
+	sta atariRtcLastMid
+	lda RTCLOK
+	sta atariRtcLastHi
+	lda #0
+	sta atariClockSubTicks
+	lda #1
+	sta atariClockInit
+	jmp @copyDate
+
+@haveClockState:
+	; delta = RTCLOK(now) - RTCLOK(last), 24-bit big-endian source order.
+	lda RTCLOK+2
+	sec
+	sbc atariRtcLastLo
+	sta atariRtcDeltaLo
+	lda RTCLOK+1
+	sbc atariRtcLastMid
+	sta atariRtcDeltaMid
+	lda RTCLOK
+	sbc atariRtcLastHi
+	sta atariRtcDeltaHi
+
+	; Snapshot current RTCLOK as new baseline.
+	lda RTCLOK+2
+	sta atariRtcLastLo
+	lda RTCLOK+1
+	sta atariRtcLastMid
+	lda RTCLOK
+	sta atariRtcLastHi
+
+	lda atariRtcDeltaLo
+	ora atariRtcDeltaMid
+	ora atariRtcDeltaHi
+	beq @copyDate
+
+	; Convert VBI ticks into elapsed seconds.
+@tickLoop:
+	inc atariClockSubTicks
+	lda PAL_R
+	and #$08
+	bne @ntscTickRate
+	lda #50
+	bne @checkSubTicks
+@ntscTickRate:
+	lda #60
+@checkSubTicks:
+	cmp atariClockSubTicks
+	bne @consumeTick
+	lda #0
+	sta atariClockSubTicks
+	jsr IncrementClockSecond
+
+@consumeTick:
+	dec atariRtcDeltaLo
+	bne @loopPending
+	lda atariRtcDeltaMid
+	ora atariRtcDeltaHi
+	beq @copyDate
+	dec atariRtcDeltaMid
+	lda atariRtcDeltaMid
+	cmp #$ff
+	bne @reloadLow
+	dec atariRtcDeltaHi
+@reloadLow:
+	lda #$ff
+	sta atariRtcDeltaLo
+@loopPending:
+	lda atariRtcDeltaLo
+	ora atariRtcDeltaMid
+	ora atariRtcDeltaHi
+	bne @tickLoop
+
+@copyDate:
+	ldy #2
+@copyDateLoop:
+	lda year,y
+	sta dateCopy,y
+	dey
+	bpl @copyDateLoop
+	lda #0
+	sta r1L
+	bbrf 7, alarmSetFlag, @checkAlarmWarn
+	; No CIA TOD alarm source on Atari: keep timeout/alert logic inert unless
+	; alarmSetFlag bit 6 has already transitioned to warning state.
+@checkAlarmWarn:
+	bbrf 6, alarmSetFlag, @doneAtari
+	jsr DoClockAlarm
+@doneAtari:
+	ENABLE_NMI
+	rts
+.else
 	sei
 	START_IO_X
 	lda cia1base+15
@@ -68,6 +185,7 @@ _DoUpdateTime:
 	jsr DoClockAlarm
 @6:	cli
 	rts
+.endif
 
 DateUpdate:
 	jsr CheckMonth
@@ -142,6 +260,14 @@ ConvertBCD:
 @2:	rts
 
 DoClockAlarm:
+.ifdef atarixl
+	lda alarmWarnFlag
+	bne @3
+	lda #$1e
+	sta alarmWarnFlag
+	dec alarmSetFlag
+@3:	rts
+.else
 	lda alarmWarnFlag
 	bne @3
 .ifdef bsw128
@@ -168,4 +294,29 @@ DoClockAlarm:
 	sta alarmWarnFlag
 	dec alarmSetFlag
 @3:	rts
+.endif
 
+.ifdef atarixl
+IncrementClockSecond:
+	inc seconds
+	lda seconds
+	cmp #60
+	bcc @done
+	lda #0
+	sta seconds
+	inc minutes
+	lda minutes
+	cmp #60
+	bcc @done
+	lda #0
+	sta minutes
+	inc hour
+	lda hour
+	cmp #24
+	bcc @done
+	lda #0
+	sta hour
+	jsr DateUpdate
+@done:
+	rts
+.endif

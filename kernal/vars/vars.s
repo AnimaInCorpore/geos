@@ -72,6 +72,14 @@
 .global verifyFlag
 .global TempCurDrive
 .global scr_mobx
+.global atariClockInit
+.global atariClockSubTicks
+.global atariRtcDeltaLo
+.global atariRtcDeltaMid
+.global atariRtcDeltaHi
+.global atariRtcLastLo
+.global atariRtcLastMid
+.global atariRtcLastHi
 
 .segment "vars"
 
@@ -161,6 +169,14 @@ RecordTableTS:	.word 0
 verifyFlag:	.byte 0
 TempCurDrive:	.byte 0
 scr_mobx:	.word 0
+atariClockInit:	.byte 0
+atariClockSubTicks: .byte 0
+atariRtcDeltaLo: .byte 0
+atariRtcDeltaMid: .byte 0
+atariRtcDeltaHi: .byte 0
+atariRtcLastLo:	.byte 0
+atariRtcLastMid: .byte 0
+atariRtcLastHi:	.byte 0
 
 
 .ifdef wheels ; moved
