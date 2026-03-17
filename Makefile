@@ -334,6 +334,13 @@ atarixl-input-smoketest:
 atarixl-disk-smoketest:
 	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_disk_smoketest=1' build/atarixl/phase4_disk_smoketest.xex build/atarixl/phase4_disk_test.atr
 
+atarixl-desktop-bootstrap:
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/phase4_disk_test.atr
+
+atarixl-desktop-run:
+	@$(MAKE) atarixl-desktop-bootstrap
+	node tools/phase5_desktop_run.js
+
 atarixl-disk-smoketest-matrix:
 	@$(MAKE) atarixl-disk-smoketest
 	node tools/phase4_disk_matrix_run.js
@@ -565,6 +572,27 @@ $(BUILD_DIR)/phase4_disk_smoketest.xex: $(BUILD_DIR)/kernal/phase4_disk_smoketes
 	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6656 count=192 >> $@ 2> /dev/null
 	printf "\xE0\x02\xE1\x02\x81\x08" >> $@
 	cp tools/phase4_disk_smoketest.atdbg $(BUILD_DIR)/phase4_disk_smoketest.xex.atdbg
+
+$(BUILD_DIR)/kernal/phase5_desktop_bootstrap.bin: $(PREFIXED_KERNAL_OBJS) kernal/kernal_atarixl_phase5_bootstrap.cfg
+	@mkdir -p $$(dirname $@)
+	$(LD) -C kernal/kernal_atarixl_phase5_bootstrap.cfg $(PREFIXED_KERNAL_OBJS) -o $@ -m $(BUILD_DIR)/kernal/phase5_desktop_bootstrap.map -Ln $(BUILD_DIR)/kernal/phase5_desktop_bootstrap.lab
+
+$(BUILD_DIR)/phase5_desktop_bootstrap.xex: $(BUILD_DIR)/kernal/phase5_desktop_bootstrap.bin $(BUILD_DIR)/drv/$(DRIVE).bin $(BUILD_DIR)/input/$(INPUT).bin
+	@echo Creating $@
+	printf "\xFF\xFF" > $@
+	printf "\x80\x08\xFF\x1F" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase5_desktop_bootstrap.bin bs=1 count=6016 >> $@ 2> /dev/null
+	printf "\x00\x20\xFF\x77" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase5_desktop_bootstrap.bin bs=1 skip=6848 count=22528 >> $@ 2> /dev/null
+	printf "\x00\x90\x7F\x9D" >> $@
+	cat $(BUILD_DIR)/drv/$(DRIVE).bin /dev/zero | dd bs=1 count=3456 >> $@ 2> /dev/null
+	printf "\x80\x9D\xFF\x9F" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase5_desktop_bootstrap.bin bs=1 skip=6016 count=640 >> $@ 2> /dev/null
+	printf "\x40\x3F\xFF\x3F" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase5_desktop_bootstrap.bin bs=1 skip=6656 count=192 >> $@ 2> /dev/null
+	printf "\x00\x78\x7F\x79" >> $@
+	cat $(BUILD_DIR)/input/$(INPUT).bin /dev/zero | dd bs=1 count=384 >> $@ 2> /dev/null
+	printf "\xE0\x02\xE1\x02\x81\x08" >> $@
 
 $(BUILD_DIR)/phase4_disk_test.atr: $(ATARI_DISK_TOOL)
 	@echo Creating $@

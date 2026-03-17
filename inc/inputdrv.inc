@@ -10,10 +10,10 @@ SetMouse        =       $2009
 
 ; for C64
 .elseif .defined(atarixl)
-MouseInit       =       $fe80
-SlowMouse       =       $fe83
-UpdateMouse     =       $fe86
-SetMouse        =       $fe89
+MouseInit       =       $fd00
+SlowMouse       =       $fd03
+UpdateMouse     =       $fd06
+SetMouse        =       $fd09
 
 ; for C64
 .else

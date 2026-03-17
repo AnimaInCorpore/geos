@@ -110,6 +110,14 @@ PHASE4_VARS_BASE   = $86c0
 PHASE4_VARS_SIZE   = $0940
 .endif
 
+.ifdef atarixl_desktop_smoketest
+PHASE5_STATUS      = $04d0
+PHASE5_STAGE_BASE  = $2000
+PHASE5_INPUT_SRC   = $7800
+PHASE5_INPUT_DST   = $fd00
+PHASE5_INPUT_SIZE  = $0180
+.endif
+
 _ResetHandle:
 	sei
 	cld
@@ -137,6 +145,20 @@ _ResetHandle:
 	jmp @smokeLoop
 .endif
 
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $10
+	jsr InstallAtariSioBridge
+	jsr InstallDisableRomStub
+	lda #$00
+	sta NMIEN
+	lda PORTB
+	ora #$82
+	sta PORTB
+	jsr $0300 ; Call the stub at its RAM location — OS ROM now off
+	LoadB PHASE5_STATUS, $20
+	jsr Phase5InstallBootstrapPayloads
+	LoadB PHASE5_STATUS, $30
+.else
 	; Snapshot OS vectors while OS ROM is still active, then disable OS ROM so
 	; the GEOS kernal at $C000-$FFFF becomes visible.  All kernal calls (Init*,
 	; i_FillRam, …) must come AFTER this pair; they live at $C100+ and would
@@ -144,10 +166,14 @@ _ResetHandle:
 	jsr InstallAtariSioBridge
 	jsr InstallDisableRomStub
 	jsr $0300 ; Call the stub at its RAM location — OS ROM now off
+.endif
 
 	; Phase 2 bring-up: ANTIC mode $0F display list and GTIA palette.
 	jsr InitAtariDisplay
 	jsr InitAtariKeyboard
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $40
+.endif
 
 	; Zero interrupt dispatch vectors before enabling Mode B NMI.  _NMIHandler
 	; will fire as soon as NMIEN is written by InitAtariIRQ; CallRoutine must
@@ -157,12 +183,24 @@ _ResetHandle:
 	sta intTopVector+1
 	sta intBotVector
 	sta intBotVector+1
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $41
+.endif
 	jsr InitAtariIRQ
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $42
+.endif
 
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $43
+.endif
 	jsr i_FillRam
 	.word $0500
 	.word dirEntryBuf
 	.byte 0
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $44
+.endif
 
 	; Keep existing date initialization flow for now.
 	ldy #2
@@ -172,25 +210,45 @@ _ResetHandle:
 	dey
 	bpl @copyDate
 
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $45
+.endif
 	jsr FirstInit
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $46
+.endif
 	jsr MouseInit
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $47
+.endif
 	lda #currentInterleave
 	sta interleave
 
 	lda #1
 	sta NUMDRV
-	ldy #0
+	ldy #8
+	sty curDevice
 	sty curDrive
 	lda #DRV_TYPE
 	sta curType
 	sta _driveType,y
 
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $50
+.endif
 OrigResetHandle:
 	sei
 	cld
 	ldx #$ff
 	jsr _DoFirstInitIO
 	jsr InitGEOEnv
+.ifdef atarixl_desktop_smoketest
+	lda #0
+	sta intTopVector
+	sta intTopVector+1
+	sta intBotVector
+	sta intBotVector+1
+.endif
 .ifdef usePlus60K
 	jsr DetectPlus60K
 .endif
@@ -210,6 +268,10 @@ OrigResetHandle:
 	bne @enterDesktop
 	inc NUMDRV
 @enterDesktop:
+.ifdef atarixl_desktop_smoketest
+	lda #$00
+	sta NMIEN
+.endif
 	LoadW EnterDeskTop+1, _EnterDeskTop
 .ifdef useRamExp
 	jsr LoadDeskTop
@@ -285,6 +347,80 @@ DisableRomStubTemplate:
 	sta PORTB
 	rts
 DisableRomStubTemplateEnd:
+
+.ifdef atarixl_desktop_smoketest
+; Install staged bootstrap payloads after OS ROM has been disabled.
+; Stage layout at $2000:
+;   +$0000 .. +$0FFF : $C000-$CFFF
+;   +$1000 .. +$2FFF : $A000-$BFFF
+;   +$3000 .. +$57FF : $D800-$FFFF (includes vectors)
+Phase5InstallBootstrapPayloads:
+	LoadW r0, PHASE5_STAGE_BASE
+	LoadW r1, $c000
+	ldx #$10
+@copyCPage:
+	ldy #0
+@copyCByte:
+	lda (r0),y
+	sta (r1),y
+	iny
+	bne @copyCByte
+	inc r0H
+	inc r1H
+	dex
+	bne @copyCPage
+
+	LoadW r0, (PHASE5_STAGE_BASE + $1000)
+	LoadW r1, $a000
+	ldx #$20
+@copyAPage:
+	ldy #0
+@copyAByte:
+	lda (r0),y
+	sta (r1),y
+	iny
+	bne @copyAByte
+	inc r0H
+	inc r1H
+	dex
+	bne @copyAPage
+
+	LoadW r0, (PHASE5_STAGE_BASE + $3000)
+	LoadW r1, $d800
+	ldx #$28
+@copyDPage:
+	ldy #0
+@copyDByte:
+	lda (r0),y
+	sta (r1),y
+	iny
+	bne @copyDByte
+	inc r0H
+	inc r1H
+	dex
+	bne @copyDPage
+
+	LoadW r0, PHASE5_INPUT_SRC
+	LoadW r1, PHASE5_INPUT_DST
+	LoadW r2, PHASE5_INPUT_SIZE
+@copyInput:
+	ldy #0
+	lda (r0),y
+	sta (r1),y
+	inc r0L
+	bne @skipSrcHi
+	inc r0H
+@skipSrcHi:
+	inc r1L
+	bne @skipDstHi
+	inc r1H
+@skipDstHi:
+	SubVW 1, r2
+	lda r2L
+	ora r2H
+	bne @copyInput
+	rts
+.endif
 
 InstallAtariSioBridge:
 	ldy #0

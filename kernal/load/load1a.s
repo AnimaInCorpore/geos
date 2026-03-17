@@ -33,12 +33,19 @@
 .import InitMachine
 .endif
 
+.ifdef atarixl_desktop_smoketest
+PHASE5_STATUS = $04d0
+.endif
+
 .global _EnterDeskTop
 .global _StartAppl
 
 .segment "load1a"
 
 _EnterDeskTop:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $60
+.endif
 .ifdef wheels
 .import GetNewKernal
 .import _FirstInit2
@@ -89,11 +96,27 @@ EDT2:	LoadW r0, _EnterDT_DB
 	jsr DoDlgBox
 	lda TempCurDrive
 	bne EDT1
-EDT3:	jsr SetDevice
+EDT3:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $61
+	sta curDrive
+	sta curDevice
+	LoadB PHASE5_STATUS, $62
+.else
+	jsr SetDevice
+.endif
 	jsr OpenDisk
 	beqx EDT5
-EDT4:	rts
-EDT5:	sta r0L
+EDT4:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $e1
+.endif
+	rts
+EDT5:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $63
+.endif
+	sta r0L
 	LoadW r6, DeskTopName
 	jsr GetFile
 	bnex EDT4
@@ -113,6 +136,9 @@ EDT5:	sta r0L
 .endif
 	bcc EDT4
 EDT6:	lda TempCurDrive
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $70
+.endif
 	jsr SetDevice
 	LoadB r0L, NULL
 	MoveW fileHeader+O_GHST_VEC, r7
@@ -134,6 +160,9 @@ _StartAppl:
 .endif
 	jsr _UseSystemFont
 	jsr UNK_4
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $80
+.endif
 	ldx r7H
 	lda r7L
 .ifdef bsw128
@@ -143,4 +172,3 @@ _StartAppl:
 .else
 	jmp _MNLP
 .endif
-

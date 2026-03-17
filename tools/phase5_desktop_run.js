@@ -1,0 +1,303 @@
+"use strict";
+
+// Step 20 diagnostic runner for the Atari XL floppy/XEX desktop bootstrap path.
+//
+// Loads build/atarixl/phase5_desktop_bootstrap.xex, waits for entry at $0881,
+// mounts build/atarixl/geos.atr as D1:, then polls a bootstrap status marker:
+//   $04D0 PHASE5_STATUS
+//
+// Status markers:
+//   $10 startup entered
+//   $20 OS ROM disabled
+//   $30 staged payload copied to runtime addresses
+//   $40 hardware init complete
+//   $50 GEOS core init complete
+//   $60 EnterDeskTop entered
+//   $70 DESK TOP file found and accepted
+//   $80 StartAppl handoff reached
+//   $E1 desktop lookup/open path failed (for example missing DESK TOP on disk)
+//
+// Exit codes:
+//   0  Bootstrap reached desktop handoff ($70/$80)
+//   1  Bootstrap reached EnterDeskTop but desktop file load failed ($E1)
+//   2  TIMEOUT waiting for decisive status
+//   3  Fatal (missing files / API errors)
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+const REPO_ROOT = path.resolve(__dirname, "..");
+const JSA8E_DIR = path.resolve(REPO_ROOT, "third_party/A8E/jsA8E");
+const { createHeadlessAutomation } = require(path.join(JSA8E_DIR, "headless"));
+
+const ENTRY_PC = 0x0881;
+const ADDR_STATUS = 0x04d0;
+const ADDR_DRV_OPEN_DISK = 0x9014;
+const ADDR_DRV_NEW_DISK = 0x900c;
+const ADDR_DRV_GET_DIR_HEAD = 0x901a;
+const ADDR_VEC_NMI = 0xfffa;
+const ADDR_VEC_RESET = 0xfffc;
+const ADDR_VEC_IRQ = 0xfffe;
+const POLL_CHUNK = 20_000;
+const MAX_CHUNKS = 500;
+const BOOT_TIMEOUT_MS = 30_000;
+
+function resolveInputPath(rawPath) {
+  if (!rawPath) {
+    return rawPath;
+  }
+  if (path.isAbsolute(rawPath)) {
+    return rawPath;
+  }
+  return path.resolve(REPO_ROOT, rawPath);
+}
+
+function parsePositiveInt(rawValue, optionName) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value <= 0 || Math.floor(value) !== value) {
+    throw new Error(optionName + " requires a positive integer");
+  }
+  return value;
+}
+
+function parseArgs(argv) {
+  const options = {
+    xexPath: resolveInputPath("build/atarixl/phase5_desktop_bootstrap.xex"),
+    diskPath: resolveInputPath("build/atarixl/phase4_disk_test.atr"),
+    osPath: resolveInputPath("third_party/A8E/ATARIXL.ROM"),
+    basicPath: resolveInputPath("third_party/A8E/ATARIBAS.ROM"),
+    pollChunk: POLL_CHUNK,
+    maxChunks: MAX_CHUNKS,
+    bootTimeoutMs: BOOT_TIMEOUT_MS,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--xex") {
+      i++;
+      if (i >= argv.length) throw new Error("--xex requires a path");
+      options.xexPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--disk") {
+      i++;
+      if (i >= argv.length) throw new Error("--disk requires a path");
+      options.diskPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--os-rom") {
+      i++;
+      if (i >= argv.length) throw new Error("--os-rom requires a path");
+      options.osPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--basic-rom") {
+      i++;
+      if (i >= argv.length) throw new Error("--basic-rom requires a path");
+      options.basicPath = resolveInputPath(argv[i]);
+      continue;
+    }
+    if (arg === "--no-basic") {
+      options.basicPath = "";
+      continue;
+    }
+    if (arg === "--poll-cycles") {
+      i++;
+      if (i >= argv.length) throw new Error("--poll-cycles requires a value");
+      options.pollChunk = parsePositiveInt(argv[i], "--poll-cycles");
+      continue;
+    }
+    if (arg === "--max-chunks") {
+      i++;
+      if (i >= argv.length) throw new Error("--max-chunks requires a value");
+      options.maxChunks = parsePositiveInt(argv[i], "--max-chunks");
+      continue;
+    }
+    if (arg === "--boot-timeout-ms") {
+      i++;
+      if (i >= argv.length) throw new Error("--boot-timeout-ms requires a value");
+      options.bootTimeoutMs = parsePositiveInt(argv[i], "--boot-timeout-ms");
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      console.log(
+        "Usage: node tools/phase5_desktop_run.js [options]\n" +
+        "  --xex <path>             Bootstrap XEX path\n" +
+        "  --disk <path>            ATR to mount as D1\n" +
+        "  --os-rom <path>          Atari XL OS ROM path\n" +
+        "  --basic-rom <path>       Atari BASIC ROM path\n" +
+        "  --no-basic               Skip loading BASIC ROM\n" +
+        "  --poll-cycles <count>    Cycles per progress poll\n" +
+        "  --max-chunks <count>     Poll iterations before timeout\n" +
+        "  --boot-timeout-ms <ms>   Entry-breakpoint timeout"
+      );
+      process.exit(0);
+    }
+    throw new Error("Unknown option: " + arg);
+  }
+
+  return options;
+}
+
+function hex2(value) {
+  return ((value & 0xff) >>> 0).toString(16).toUpperCase().padStart(2, "0");
+}
+
+function hex4(value) {
+  return ((value & 0xffff) >>> 0).toString(16).toUpperCase().padStart(4, "0");
+}
+
+function statusLabel(status) {
+  switch (status & 0xff) {
+    case 0x10: return "STARTUP";
+    case 0x20: return "ROM_OFF";
+    case 0x30: return "PAYLOAD_COPIED";
+    case 0x40: return "HW_INIT_OK";
+    case 0x50: return "CORE_INIT_OK";
+    case 0x60: return "ENTER_DESKTOP";
+    case 0x61: return "SET_DEVICE";
+    case 0x62: return "OPEN_DISK";
+    case 0x63: return "GET_FILE";
+    case 0x70: return "DESKTOP_FOUND";
+    case 0x80: return "START_APPL";
+    case 0xe1: return "DESKTOP_LOAD_FAILED";
+    case 0x00: return "NONE";
+    default: return "$" + hex2(status);
+  }
+}
+
+async function readWord(api, addr) {
+  const lo = await api.debug.readMemory(addr & 0xffff);
+  const hi = await api.debug.readMemory((addr + 1) & 0xffff);
+  return ((hi << 8) | lo) & 0xffff;
+}
+
+async function readBytes(api, addr, count) {
+  const bytes = [];
+  for (let i = 0; i < count; i++) {
+    bytes.push(await api.debug.readMemory((addr + i) & 0xffff));
+  }
+  return bytes;
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+
+  for (const [label, p] of [["XEX", options.xexPath], ["ATR", options.diskPath], ["OS ROM", options.osPath]]) {
+    if (!fs.existsSync(p)) {
+      console.error("FATAL: " + label + " not found: " + p);
+      console.error("Run: make atarixl-desktop-bootstrap");
+      process.exit(3);
+    }
+  }
+
+  const runtime = await createHeadlessAutomation({
+    roms: {
+      os: options.osPath,
+      basic: options.basicPath && fs.existsSync(options.basicPath) ? options.basicPath : undefined,
+    },
+    turbo: true,
+    sioTurbo: false,
+    frameDelayMs: 0,
+  });
+
+  try {
+    const api = runtime.api;
+    await api.whenReady();
+
+    const xexData = new Uint8Array(fs.readFileSync(options.xexPath));
+    const diskData = new Uint8Array(fs.readFileSync(options.diskPath));
+
+    await api.debug.setBreakpoints([ENTRY_PC]);
+    await api.dev.runXex({
+      bytes: xexData,
+      name: path.basename(options.xexPath),
+      awaitEntry: false,
+      start: true,
+      resetOptions: { portB: 0xff },
+    });
+
+    const entryEvent = await api.debug.waitForBreakpoint({ timeoutMs: options.bootTimeoutMs });
+    if (!entryEvent || !entryEvent.debugState) {
+      console.error("FATAL: XEX did not reach entry breakpoint at $" +
+        ENTRY_PC.toString(16).toUpperCase() + " within " + (options.bootTimeoutMs / 1000) + "s");
+      process.exit(3);
+    }
+
+    await api.media.mountDisk(diskData, { name: path.basename(options.diskPath), slot: 0 });
+    await api.debug.setBreakpoints([]);
+    await api.system.start();
+
+    let status = 0;
+    let chunks = 0;
+    let decisive = false;
+    for (; chunks < options.maxChunks; chunks++) {
+      await api.system.waitForCycles({ count: options.pollChunk });
+      status = await api.debug.readMemory(ADDR_STATUS);
+      process.stdout.write(
+        "  chunk " + (chunks + 1) + "/" + options.maxChunks +
+        "  status=" + statusLabel(status) +
+        " ($" + hex2(status) + ")\r"
+      );
+      if (status === 0x70 || status === 0x80 || status === 0xe1) {
+        decisive = true;
+        break;
+      }
+    }
+    process.stdout.write("\n");
+
+    await api.system.pause();
+    const debugState = await api.debug.getDebugState();
+    const openDiskVec = await readWord(api, ADDR_DRV_OPEN_DISK);
+    const newDiskVec = await readWord(api, ADDR_DRV_NEW_DISK);
+    const getDirHeadVec = await readWord(api, ADDR_DRV_GET_DIR_HEAD);
+    const nmiVec = await readWord(api, ADDR_VEC_NMI);
+    const resetVec = await readWord(api, ADDR_VEC_RESET);
+    const irqVec = await readWord(api, ADDR_VEC_IRQ);
+    const pcBytes = debugState ? await readBytes(api, debugState.pc, 8) : [];
+    const stackTop = await readBytes(api, 0x01f0, 16);
+
+    console.log("");
+    console.log("=== Phase 5 Desktop Bootstrap Status ===");
+    console.log("PHASE5_STATUS: " + statusLabel(status) + " ($" + hex2(status) + ")");
+    if (debugState) {
+      console.log("PC=$" + hex4(debugState.pc) +
+        " A=$" + hex2(debugState.a) +
+        " X=$" + hex2(debugState.x) +
+        " Y=$" + hex2(debugState.y) +
+        " SP=$" + hex2(debugState.sp));
+      console.log("PC bytes: " + pcBytes.map(hex2).join(" "));
+    }
+    console.log("Driver vectors: OpenDisk=$" + hex4(openDiskVec) +
+      " NewDisk=$" + hex4(newDiskVec) +
+      " GetDirHead=$" + hex4(getDirHeadVec));
+    console.log("ROM-off vectors: NMI=$" + hex4(nmiVec) +
+      " RESET=$" + hex4(resetVec) +
+      " IRQ=$" + hex4(irqVec));
+    console.log("Stack $01F0-$01FF: " + stackTop.map(hex2).join(" "));
+    console.log("");
+
+    if (!decisive) {
+      console.log("TIMEOUT — bootstrap did not reach a decisive desktop status.");
+      process.exit(2);
+    }
+
+    if (status === 0xe1) {
+      console.log("Bootstrap reached EnterDeskTop but desktop load failed.");
+      console.log("Most common cause: ATR does not contain a compatible DESK TOP file.");
+      process.exit(1);
+    }
+
+    console.log("Bootstrap reached desktop handoff status.");
+    process.exit(0);
+  } finally {
+    if (runtime && typeof runtime.dispose === "function") {
+      await runtime.dispose();
+    }
+  }
+}
+
+main().catch(function (err) {
+  console.error("Fatal:", err && err.message ? err.message : String(err));
+  process.exit(3);
+});

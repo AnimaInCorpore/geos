@@ -216,10 +216,16 @@ EXP_BASE                =       $df00; reu, header
 MOUSE_BASE_128          =       $fd00 ; ---
 MOUSE_JMP_128           =       $fd00 ; ---
 END_MOUSE_128           =       $fe80 ; ---
+.if .defined(atarixl)
+MOUSE_BASE              =       $fd00 ; input
+MOUSE_JMP               =       $fd00 ; boot
+END_MOUSE               =       $fe80 ; ---
+.else
 MOUSE_BASE              =       $fe80 ; input
 MOUSE_JMP               =       $fe80 ; boot
-config                  =       $ff00 ; ---
 END_MOUSE               =       $fffa ; ---
+.endif
+config                  =       $ff00 ; ---
 NMI_VECTOR              =       $fffa ; ---
 RESET_VECTOR            =       $fffc ; ---
 IRQ_VECTOR              =       $fffe ; ---
