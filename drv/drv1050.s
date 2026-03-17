@@ -829,6 +829,10 @@ ReadWriteBadParams:
 	rts
 
 DoSioSectorIO:
+	; Atari OS-assisted calls can clobber ZP $BA; keep GEOS device state in
+	; sync with the active drive before each physical sector transaction.
+	lda curDrive
+	sta curDevice
 	jsr SetupSioDCB
 .ifdef atarixl_desktop_smoketest
 	lda DDEVIC
@@ -873,10 +877,14 @@ DoSioSectorIO:
 .ifdef atarixl_desktop_smoketest
 	sta PHASE5_SIOSECH
 .endif
+	lda curDevice
+	sta sioSavedCurDevice
 	php
 	sei
 	jsr SIO_BRIDGE_BASE
 	plp
+	lda sioSavedCurDevice
+	sta curDevice
 .ifdef atarixl_disk_smoketest
 	sta PHASE4_SIORETA
 	tya
@@ -1107,6 +1115,8 @@ sioSectorL:
 sioSectorH:
 	.byte 0
 lastSIOStatus:
+	.byte 0
+sioSavedCurDevice:
 	.byte 0
 
 tmpclkreg:

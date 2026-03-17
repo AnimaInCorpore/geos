@@ -72,6 +72,14 @@ _EnterDeskTop:
 	LoadB r0L, NULL
 	MoveW DeskTopExec, r7
 .else
+.ifdef atarixl_desktop_smoketest
+	lda curDrive
+	jsr EDT3
+	beqx EDT5
+	LoadB PHASE5_STATUS, $e2
+	stx PHASE5_ERROR_X
+	rts
+.else
 	MoveB curDrive, TempCurDrive
 	eor #1
 	tay
@@ -97,16 +105,14 @@ EDT2:	LoadW r0, _EnterDT_DB
 	jsr DoDlgBox
 	lda TempCurDrive
 	bne EDT1
+.endif
 EDT3:
 .ifdef atarixl_desktop_smoketest
-	tax
 	LoadB PHASE5_STATUS, $61
-	txa
-	sta curDrive
-	sta curDevice
-	LoadB PHASE5_STATUS, $62
-.else
+.endif
 	jsr SetDevice
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $62
 .endif
 	jsr OpenDisk
 .ifdef atarixl_desktop_smoketest
@@ -124,6 +130,8 @@ EDT4:
 .endif
 	rts
 EDT5:
+	lda curDrive
+	sta curDevice
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $63
 .endif

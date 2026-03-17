@@ -65,7 +65,6 @@ class VlirRecord:
     count: int
     last_sector_index: int
     payload: bytes | None
-    last_data_record: bool
 
 
 @dataclass
@@ -119,7 +118,6 @@ class CvtFile:
                             count=count,
                             last_sector_index=last,
                             payload=None,
-                            last_data_record=False,
                         )
                     )
                     break
@@ -129,7 +127,6 @@ class CvtFile:
                             count=count,
                             last_sector_index=last,
                             payload=None,
-                            last_data_record=False,
                         )
                     )
                     continue
@@ -137,23 +134,29 @@ class CvtFile:
                     raise ValueError(f"{path} has invalid VLIR record entry {idx}: 00/{last:02X}")
                 if last == 0:
                     raise ValueError(f"{path} has invalid VLIR last-sector index 00 at record {idx}")
+                if last < 1 or last > BLOCK_PAYLOAD + 1:
+                    raise ValueError(
+                        f"{path} has invalid VLIR last-sector index {last:02X} at record {idx}"
+                    )
 
-                # CVT stores all non-final data records as full sectors.
-                # The last record's final sector is shortened via last index.
+                # Each VLIR record carries its own final-sector byte count in
+                # `last` (stored as bytes+1). Decode every record independently.
+                record_len = (count - 1) * BLOCK_PAYLOAD + (last - 1)
+                stored_len = count * BLOCK_PAYLOAD
                 if idx == last_data_record_index:
-                    record_len = (count - 1) * BLOCK_PAYLOAD + (last - 1)
-                else:
-                    record_len = count * BLOCK_PAYLOAD
+                    # Convert v2.5 pads non-final records to full sectors in
+                    # its packed data blob and stores only the final record with
+                    # a short last sector.
+                    stored_len = record_len
 
-                end_offset = data_offset + record_len
+                end_offset = data_offset + stored_len
                 if end_offset > len(data_blob):
                     raise ValueError(f"{path} VLIR record {idx} overruns data section")
                 vlir_records.append(
                     VlirRecord(
                         count=count,
                         last_sector_index=last,
-                        payload=data_blob[data_offset:end_offset],
-                        last_data_record=(idx == last_data_record_index),
+                        payload=data_blob[data_offset : data_offset + record_len],
                     )
                 )
                 data_offset = end_offset
@@ -249,10 +252,7 @@ class AtariGeosDisk:
                 for sector_index in range(record.count):
                     block = bytearray(BLOCK_SIZE)
                     if sector_index == record.count - 1:
-                        if record.last_data_record:
-                            last_payload_len = record.last_sector_index - 1
-                        else:
-                            last_payload_len = BLOCK_PAYLOAD
+                        last_payload_len = record.last_sector_index - 1
                         end_offset = payload_offset + last_payload_len
                         if end_offset > len(record.payload):
                             raise ValueError(
