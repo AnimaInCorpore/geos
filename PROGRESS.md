@@ -48,11 +48,18 @@ Update rule: after each completed porting step, change exactly one matching chec
 
 ## Phase 6: Integration and polish
 
-- [ ] 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
+- [x] 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
 - [ ] 23. Connect VBI counter to `kernal/time/` clock routines
 - [ ] 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
 - [ ] 25. Regression-test all graphics, font, menu, dialog, and file operations
 - [ ] 26. Tune timing loops (Atari 1.79 MHz vs C64 1 MHz; cycle-count-dependent delays differ)
+
+### Phase 6 Notes
+
+- 2026-03-17: Completed step 22 by replacing the Atari build's C64 VIC-II sprite path with a dedicated P/M implementation in `kernal/sprites/sprites_atari.s` and wiring it in `Makefile` (`VARIANT=atarixl` now links `sprites_atari.s`, non-Atari builds still link `sprites.s`). The new Atari sprite layer maps GEOS sprite 0 to player 0+1 (16-pixel cursor) and sprite 1 to player 2 (text prompt), preserving `DrawSprite`/`PosSprite`/`EnablSprite`/`DisablSprite` syscall contracts while rendering from GEOS sprite bitmaps into PM memory at `$7800`.
+- 2026-03-17: Updated Atari P/M init in `kernal/hw/hw_atari.s` to fully reset player/missile registers before enable, including explicit clears of `GRAFP0_W`..`GRAFP3_W` and `GRAFM_W`, and enabled P/M DMA in the normal display path (`DMACTL=$3E`).
+- 2026-03-17: Desktop/UI Atari safety follow-ups: removed direct C64 sprite-register save/restore writes from Atari dialog paths (`kernal/dlgbox/dlgbox1c.s`, `kernal/dlgbox/dlgbox1d.s`), added Atari-safe text prompt sprite init path in `kernal/conio/conio5.s`, and switched Atari init color writes in `kernal/init/init2.s` to GTIA player colors.
+- 2026-03-17: Build verification: `make -j4 atarixl`, `make atarixl-input-smoketest`, and `make atarixl-disk-smoketest` all complete successfully with the new desktop cursor path.
 
 ### Phase 2 Notes
 

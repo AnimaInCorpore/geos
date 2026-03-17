@@ -68,10 +68,14 @@ PrmptOff1:
 _InitTextPrompt:
 	tay
 	START_IO
+ .if .defined(atarixl)
+	; Atari prompt uses player 2 via sprites_atari.s; no VIC register setup.
+ .else
 	MoveB mob0clr, mob1clr
 	lda moby2
 	and #%11111101
 	sta moby2
+ .endif
 	tya
 	pha
 	LoadB alphaFlag, %10000011
@@ -87,16 +91,25 @@ _InitTextPrompt:
 	bcc @X
 	ldy #42
 @X:
+.elseif .defined(atarixl)
+	cpy #ATARI_PROMPT_HEIGHT
+	bcc @2
+	ldy #ATARI_PROMPT_HEIGHT
+	bra @2
 .endif
 	cpy #21
 	bcc @2
 	beq @2
+ .if .defined(atarixl)
+	ldy #ATARI_PROMPT_HEIGHT
+ .else
 	tya
 	lsr
 	tay
 	lda moby2
 	ora #2
 	sta moby2
+ .endif
 @2:
 .ifdef bsw128
 	tya
@@ -117,3 +130,4 @@ _InitTextPrompt:
 	END_IO
 	rts
 
+ATARI_PROMPT_HEIGHT = 16

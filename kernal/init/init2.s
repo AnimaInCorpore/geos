@@ -9,6 +9,9 @@
 .include "config.inc"
 .include "kernal.inc"
 .include "c64.inc"
+.ifdef atarixl
+.include "atari.inc"
+.endif
 
 .import InitMsePic
 .import _EnterDeskTop
@@ -73,9 +76,16 @@ _FirstInit:
 	.word COLOR_MATRIX
 @1:	.byte (DKGREY << 4)+LTGREY
 	START_IO_X
+.if .defined(atarixl)
+	LoadB COLPM0, $0f
+	sta COLPM1
+	sta COLPM2
+	sta COLPM3
+.else
 	LoadB mob0clr, BLUE
 	sta mob1clr
 	LoadB extclr, BLACK
+.endif
 	END_IO_X
 .endif
 	ldy #62

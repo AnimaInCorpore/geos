@@ -141,6 +141,9 @@ NMIEN    = $D40E ; NMI enable: bit6=VBI, bit5=DLI
 NMIST    = $D40F ; NMI status (read): bit7=DLI pending, bit6=VBI pending
 NMIRES   = $D40F ; NMI acknowledge/reset (write; use for VBI acknowledge)
 
+; GEOS Atari P/M cursor backing memory (2 KB aligned, below icon data at $3F40).
+ATARI_PM_BASE = $7800
+
 ; -----------------------------------------------
 ; Atari OS variables (valid when OS ROM active)
 ; -----------------------------------------------

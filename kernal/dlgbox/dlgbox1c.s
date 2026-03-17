@@ -45,7 +45,9 @@ DlgBoxPrep2:
 	LoadW r4, dlgBoxRamBuf
 	bcc @1
 	jsr DialogSave
+ .ifndef atarixl
 	LoadB mobenble, 1
+ .endif
 	bne @2
 @1:	jsr DialogRestore
 @2:	END_IO
@@ -55,7 +57,9 @@ DlgBoxPrep2:
 	START_IO
 	LoadW r4, dlgBoxRamBuf
 	jsr DialogSave
+ .ifndef atarixl
 	LoadB mobenble, 1
+ .endif
 	END_IO_128
 	END_IO
 	jsr InitGEOEnv
@@ -230,4 +234,3 @@ Dialog_2:
 	END_IO
 	rts
 .endif
-

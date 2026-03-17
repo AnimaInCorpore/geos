@@ -19,7 +19,6 @@
 
 BITMAP_LMS0 = BITMAP_BASE
 BITMAP_LMS1 = BITMAP_BASE + $1000
-ATARI_PM_BASE = $7800
 
 .segment "hw_atari"
 
@@ -33,7 +32,7 @@ InitAtariDisplay:
 	jsr ClearAtariBitmap
 	jsr InitAtariColors
 	jsr InitAtariPM
-	lda #$22            ; DL DMA + normal-width playfield
+	lda #$3e            ; DL DMA + normal-width playfield + player/missile DMA
 	sta DMACTL
 	rts
 
@@ -64,17 +63,29 @@ InitAtariPM:
 	.byte 0
 	lda #>(ATARI_PM_BASE)
 	sta PMBASE
-	lda #$00            ; keep P/M output disabled until sprite rewrite
+	lda #$00            ; keep P/M output disabled while registers are reset
 	sta GRACTL
 	sta SIZEP0
 	sta SIZEP1
 	sta SIZEP2
 	sta SIZEP3
+	sta SIZEM
+	sta HPOSP0
+	sta HPOSP1
+	sta HPOSP2
+	sta HPOSP3
+	sta GRAFP0_W
+	sta GRAFP1_W
+	sta GRAFP2_W
+	sta GRAFP3_W
+	sta GRAFM_W
 	lda #$0f
 	sta COLPM0
 	sta COLPM1
 	sta COLPM2
 	sta COLPM3
+	lda #$03            ; latch player/missile graphics output
+	sta GRACTL
 	rts
 
 AtariColorTable:

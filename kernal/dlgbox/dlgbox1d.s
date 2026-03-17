@@ -88,6 +88,21 @@ DialogNextSaveRestoreEntry:
 
 ; pointer & length tuples of memory regions to save and restore
 .ifdef wheels_size_and_speed
+.if .defined(atarixl)
+.define DialogCopyTab curPattern, appMain, IconDescVec, menuOptNumber, TimersTab, obj0Pointer
+DialogCopyTab1:
+	.lobytes DialogCopyTab
+DialogCopyTab2:
+	.hibytes DialogCopyTab
+DialogCopyTab3:
+	.byte 23
+	.byte 38
+	.byte 2
+	.byte 49
+	.byte 227
+	.byte 8
+	.byte NULL
+.else
 .define DialogCopyTab curPattern, appMain, IconDescVec, menuOptNumber, TimersTab, obj0Pointer, mob0xpos, mobenble, mobprior, mcmclr0, mob1clr, moby2
 DialogCopyTab1:
 	.lobytes DialogCopyTab
@@ -107,6 +122,23 @@ DialogCopyTab3:
 	.byte 7
 	.byte 1
 	.byte NULL
+.endif
+.else
+.if .defined(atarixl)
+DialogCopyTab:
+	.word curPattern
+	.byte 23
+	.word appMain
+	.byte 38
+	.word IconDescVec
+	.byte 2
+	.word menuOptNumber
+	.byte 49
+	.word TimersTab
+	.byte 227
+	.word obj0Pointer
+	.byte 8
+	.word NULL
 .else
 DialogCopyTab:
 	.word curPattern
@@ -134,6 +166,7 @@ DialogCopyTab:
 	.word moby2
 	.byte 1
 	.word NULL
+.endif
 .endif
 
 ; handler for commands 1-6
@@ -232,4 +265,3 @@ DBIconsHelp2:
 	cpy #8
 	bne @1
 @4:	rts
-

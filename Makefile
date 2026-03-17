@@ -119,7 +119,6 @@ KERNAL_SOURCES= \
 	kernal/reu/reu.s \
 	kernal/serial/serial1.s \
 	kernal/serial/serial2.s \
-	kernal/sprites/sprites.s \
 	kernal/time/time1.s \
 	kernal/time/time2.s \
 	kernal/tobasic/tobasic2.s \
@@ -127,6 +126,7 @@ KERNAL_SOURCES= \
 
 ifneq ($(VARIANT), atarixl)
 	KERNAL_SOURCES += \
+	kernal/sprites/sprites.s \
 	kernal/keyboard/keyboard1.s \
 	kernal/keyboard/keyboard2.s \
 	kernal/keyboard/keyboard3.s \
@@ -170,6 +170,7 @@ ifeq ($(VARIANT), atarixl)
 	kernal/hw/hw_atari.s \
 	kernal/irq/irq_atari.s \
 	kernal/keyboard/keyboard_atari.s \
+	kernal/sprites/sprites_atari.s \
 	kernal/start/vectors_atari.s \
 	kernal/start/start_atari.s \
 	kernal/vars/vars_atari.s
