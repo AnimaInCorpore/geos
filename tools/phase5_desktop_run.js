@@ -15,11 +15,12 @@
 //   $60 EnterDeskTop entered
 //   $70 DESK TOP file found and accepted
 //   $80 StartAppl handoff reached
+//   $81 Desktop smoke frame is visible (fallback path, not real DESK TOP app rendering)
 //   $E1 desktop lookup/open path failed (for example missing DESK TOP on disk)
 //
 // Exit codes:
-//   0  Bootstrap reached desktop handoff ($80)
-//   1  Bootstrap reached EnterDeskTop but desktop file load failed ($E1)
+//   0  Bootstrap reached desktop handoff ($80), or smoke frame when explicitly allowed
+//   1  Bootstrap reached EnterDeskTop but desktop load/render criteria were not met
 //   2  TIMEOUT waiting for decisive status
 //   3  Fatal (missing files / API errors)
 
@@ -110,6 +111,7 @@ function parseArgs(argv) {
     maxChunks: MAX_CHUNKS,
     bootTimeoutMs: BOOT_TIMEOUT_MS,
     postCycles: 0,
+    allowSmokeFrame: false,
     screenshotPath: "",
   };
 
@@ -173,6 +175,10 @@ function parseArgs(argv) {
       options.screenshotPath = resolveInputPath(argv[i]);
       continue;
     }
+    if (arg === "--allow-smoke-frame") {
+      options.allowSmokeFrame = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       console.log(
         "Usage: node tools/phase5_desktop_run.js [options]\n" +
@@ -185,6 +191,7 @@ function parseArgs(argv) {
         "  --max-chunks <count>     Poll iterations before timeout\n" +
         "  --boot-timeout-ms <ms>   Entry-breakpoint timeout\n" +
         "  --post-cycles <count>    Extra cycles before pause/artifacts\n" +
+        "  --allow-smoke-frame      Treat $81 smoke-frame fallback as success\n" +
         "  --screenshot <path>      Save a PNG screenshot artifact"
       );
       process.exit(0);
@@ -217,6 +224,7 @@ function statusLabel(status) {
     case 0x6a: return "OPEN_DISK_RET";
     case 0x70: return "DESKTOP_FOUND";
     case 0x80: return "START_APPL";
+    case 0x81: return "SMOKE_FRAME_VISIBLE";
     case 0xe1: return "DESKTOP_LOAD_FAILED";
     case 0xe2: return "OPEN_DISK_FAILED";
     case 0xe3: return "GET_FILE_FAILED";
@@ -311,6 +319,10 @@ async function main() {
         decisive = true;
         break;
       }
+      if (options.allowSmokeFrame && status === 0x81) {
+        decisive = true;
+        break;
+      }
     }
     process.stdout.write("\n");
 
@@ -320,6 +332,7 @@ async function main() {
 
     await api.system.pause();
     const debugState = await api.debug.getDebugState();
+    const bankState = await api.debug.getBankState();
     const openDiskVec = await readWord(api, ADDR_DRV_OPEN_DISK);
     const newDiskVec = await readWord(api, ADDR_DRV_NEW_DISK);
     const getDirHeadVec = await readWord(api, ADDR_DRV_GET_DIR_HEAD);
@@ -408,6 +421,9 @@ async function main() {
       " vec=$" + hex4(geosVec) +
       " r7=$" + hex4(geosR7) +
       " appMain=$" + hex4(geosAppMain));
+    if (bankState) {
+      console.log("BankState: " + JSON.stringify(bankState));
+    }
     console.log("GEOS header [00..07]: " + geosHdr0.map(hex2).join(" "));
     console.log("GEOS header [40..57]: " + geosHdr64.map(hex2).join(" "));
     console.log("GEOS start bytes: " + startBytes.map(hex2).join(" "));
@@ -415,7 +431,8 @@ async function main() {
     console.log("Display regs: DMACTL=$" + hex2(dmactl) +
       " DLIST=$" + hex4(dlist) +
       " SDMCTL=$" + hex2(sdmctl) +
-      " SDLST=$" + hex4(sdlst));
+      " SDLST=$" + hex4(sdlst) +
+      " (use SDLST as authoritative in jsA8E)");
     console.log("Colors: COLBK=$" + hex2(colbk) +
       " PF0=$" + hex2(colpf0) +
       " PF1=$" + hex2(colpf1) +
@@ -445,7 +462,17 @@ async function main() {
       process.exit(1);
     }
 
-    console.log("Bootstrap reached desktop handoff status.");
+    if (status === 0x81) {
+      if (!options.allowSmokeFrame) {
+        console.log("Reached smoke-frame fallback ($81), not real desktop app rendering.");
+        console.log("Run with --allow-smoke-frame only for bootstrap diagnostics.");
+        process.exit(1);
+      }
+      console.log("Bootstrap reached visible desktop smoke-frame fallback.");
+    }
+    if (status === 0x80) {
+      console.log("Bootstrap reached desktop handoff status.");
+    }
     process.exit(0);
   } finally {
     if (runtime && typeof runtime.dispose === "function") {

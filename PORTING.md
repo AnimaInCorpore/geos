@@ -1446,6 +1446,8 @@ Phase 5 prerequisites and disk rule:
 - Do not start ROM-disable desktop work until Phase 4 disk I/O succeeds end-to-end with OS ROM enabled in Altirra. Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary iteration path for faster, deterministic smoke runs — no browser or HTTP server needed. Fall back to the browser path only for visual inspection or when a problem does not reproduce headless.
 - Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Reuse the Phase 4 staging/copy-under-ROM path and do not block Phase 5 on raw POKEY SIO.
 - If a raw-SIO optimisation path is prototyped in Phase 5 or later, calculate the POKEY baud-rate divisor against the **PAL clock (~1.773 MHz)**, not the NTSC figure (~1.790 MHz). Standard Atari SIO at 19,200 baud: `divisor = (1,773,000 / (2 × 19,200)) − 7 ≈ 39`. Using the NTSC divisor (~40) on PAL hardware shifts the baud rate by ~1%, which is within tolerance for most drives but will cause framing errors on marginal hardware.
+- A "desktop smoke frame" (for example a kernel-rendered placeholder reached after `GetFile("DESK TOP")`) is useful for bootstrap diagnostics only and does **not** satisfy step 21. Step 21 requires the actual `DESK TOP` application code path to execute and render correctly on Atari.
+- Current repository scope includes Atari-ported KERNAL sources but not Atari-native `DESK TOP` application sources; loading the stock C64 `DESK TOP` `.cvt` verifies disk/bootstrap flow but does not guarantee correct rendering. Track this explicitly as an application-port blocker for step 21.
 
 ### Phase 6: Integration and polish
 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
@@ -1600,6 +1602,10 @@ review to keep explicitly on the porting backlog:
 - **Disk-image tool scope.** `tools/atari_geos_disk.py` currently supports sequential
   `.cvt` inputs only; VLIR `.cvt` support remains required for real GEOS desktop and
   application workflows.
+- **Desktop application gap.** Phase 5 can now prove ROM-off bootstrap + desktop-file
+  lookup, but real desktop rendering still depends on an Atari-compatible `DESK TOP`
+  application path. Treat C64 `DESK TOP` binary launch artifacts and any smoke-frame
+  fallback as diagnostics, not end-state evidence for step 21.
 - **Drive-unit handling.** `drv1050.s` still hardcodes `DUNIT = 1`; multi-drive support
   must be revisited so the Atari DCB unit field follows `curDrive`.
 - **Driver cleanup.** Remove or justify leftover C64-era temporary symbols in
