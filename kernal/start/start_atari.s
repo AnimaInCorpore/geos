@@ -201,6 +201,7 @@ _ResetHandle:
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $44
 .endif
+	jsr InstallAtariSioBridge
 
 	; Keep existing date initialization flow for now.
 	ldy #2
@@ -268,10 +269,6 @@ OrigResetHandle:
 	bne @enterDesktop
 	inc NUMDRV
 @enterDesktop:
-.ifdef atarixl_desktop_smoketest
-	lda #$00
-	sta NMIEN
-.endif
 	LoadW EnterDeskTop+1, _EnterDeskTop
 .ifdef useRamExp
 	jsr LoadDeskTop

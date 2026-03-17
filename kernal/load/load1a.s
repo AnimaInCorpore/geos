@@ -35,6 +35,7 @@
 
 .ifdef atarixl_desktop_smoketest
 PHASE5_STATUS = $04d0
+PHASE5_ERROR_X = $04d1
 .endif
 
 .global _EnterDeskTop
@@ -98,7 +99,9 @@ EDT2:	LoadW r0, _EnterDT_DB
 	bne EDT1
 EDT3:
 .ifdef atarixl_desktop_smoketest
+	tax
 	LoadB PHASE5_STATUS, $61
+	txa
 	sta curDrive
 	sta curDevice
 	LoadB PHASE5_STATUS, $62
@@ -106,7 +109,15 @@ EDT3:
 	jsr SetDevice
 .endif
 	jsr OpenDisk
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $6A
+.endif
 	beqx EDT5
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $e2
+	stx PHASE5_ERROR_X
+	rts
+.endif
 EDT4:
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $e1
@@ -119,14 +130,14 @@ EDT5:
 	sta r0L
 	LoadW r6, DeskTopName
 	jsr GetFile
-	bnex EDT4
+	bnex EDT4GetFile
 	lda fileHeader+O_GHFNAME+13
 .ifdef bsw128
 	cmp #'2'
 .else
 	cmp #'1'
 .endif
-	bcc EDT4
+	bcc EDT4VerA
 	bne EDT6
 	lda fileHeader+O_GHFNAME+15
 .ifdef bsw128
@@ -134,7 +145,7 @@ EDT5:
 .else
 	cmp #'5'
 .endif
-	bcc EDT4
+	bcc EDT4VerB
 EDT6:	lda TempCurDrive
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $70
@@ -144,6 +155,25 @@ EDT6:	lda TempCurDrive
 	MoveW fileHeader+O_GHST_VEC, r7
 .endif
 .endif
+
+EDT4GetFile:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $e3
+	rts
+.endif
+	bra EDT4
+EDT4VerA:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $e4
+	rts
+.endif
+	bra EDT4
+EDT4VerB:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_STATUS, $e5
+	rts
+.endif
+	bra EDT4
 
 _StartAppl:
 	sei

@@ -207,7 +207,11 @@ dlgBoxRamBuf            =       $851f ; dlgbox; to $8697
 
 ;
 DISK_BASE               =       $9000 ; files
+.if .defined(atarixl)
+SCREEN_BASE             =       $4000 ; graph, boot
+.else
 SCREEN_BASE             =       $a000 ; graph, boot
+.endif
 SPRITE_PICS             =       $8a00 ; ---
 COLOR_MATRIX            =       $8c00 ; init
 OS_ROM                  =       $c000 ; ---

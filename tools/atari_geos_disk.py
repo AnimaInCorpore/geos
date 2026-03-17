@@ -61,6 +61,14 @@ def build_chain_blocks(payload: bytes) -> list[bytearray]:
 
 
 @dataclass
+class VlirRecord:
+    count: int
+    last_sector_index: int
+    payload: bytes | None
+    last_data_record: bool
+
+
+@dataclass
 class CvtFile:
     path: Path
     dos_name: bytes
@@ -69,8 +77,7 @@ class CvtFile:
     date: bytes
     fileinfo: bytes
     seq_payload: bytes
-    vlir_sizes: list[int]
-    vlir_payload: bytes
+    vlir_records: list[VlirRecord]
 
     @classmethod
     def parse(cls, path: Path) -> "CvtFile":
@@ -87,11 +94,79 @@ class CvtFile:
         fileinfo = data[BLOCK_PAYLOAD : 2 * BLOCK_PAYLOAD]
         payload = data[2 * BLOCK_PAYLOAD :]
 
-        vlir_sizes: list[int] = []
         seq_payload = payload
-        vlir_payload = b""
         if structure == 1:
-            raise ValueError(f"{path} is a VLIR .cvt file; the Atari converter currently supports sequential .cvt inputs only")
+            if len(payload) < BLOCK_PAYLOAD:
+                raise ValueError(f"{path} VLIR payload is too short")
+            record_block = payload[:BLOCK_PAYLOAD]
+            data_blob = payload[BLOCK_PAYLOAD:]
+            raw_entries: list[tuple[int, int]] = []
+            for i in range(0, BLOCK_PAYLOAD, 2):
+                count = record_block[i]
+                last = record_block[i + 1]
+                raw_entries.append((count, last))
+                if count == 0 and last == 0:
+                    break
+
+            vlir_records = []
+            existing_indices = [idx for idx, (count, _) in enumerate(raw_entries) if count > 0]
+            last_data_record_index = existing_indices[-1] if existing_indices else -1
+            data_offset = 0
+            for idx, (count, last) in enumerate(raw_entries):
+                if count == 0 and last == 0:
+                    vlir_records.append(
+                        VlirRecord(
+                            count=count,
+                            last_sector_index=last,
+                            payload=None,
+                            last_data_record=False,
+                        )
+                    )
+                    break
+                if count == 0 and last == 0xFF:
+                    vlir_records.append(
+                        VlirRecord(
+                            count=count,
+                            last_sector_index=last,
+                            payload=None,
+                            last_data_record=False,
+                        )
+                    )
+                    continue
+                if count == 0:
+                    raise ValueError(f"{path} has invalid VLIR record entry {idx}: 00/{last:02X}")
+                if last == 0:
+                    raise ValueError(f"{path} has invalid VLIR last-sector index 00 at record {idx}")
+
+                # CVT stores all non-final data records as full sectors.
+                # The last record's final sector is shortened via last index.
+                if idx == last_data_record_index:
+                    record_len = (count - 1) * BLOCK_PAYLOAD + (last - 1)
+                else:
+                    record_len = count * BLOCK_PAYLOAD
+
+                end_offset = data_offset + record_len
+                if end_offset > len(data_blob):
+                    raise ValueError(f"{path} VLIR record {idx} overruns data section")
+                vlir_records.append(
+                    VlirRecord(
+                        count=count,
+                        last_sector_index=last,
+                        payload=data_blob[data_offset:end_offset],
+                        last_data_record=(idx == last_data_record_index),
+                    )
+                )
+                data_offset = end_offset
+
+            if data_offset != len(data_blob):
+                raise ValueError(
+                    f"{path} VLIR data length mismatch: consumed {data_offset} of {len(data_blob)} bytes"
+                )
+            seq_payload = b""
+        elif structure != 0:
+            raise ValueError(f"{path} uses unsupported GEOS structure {structure}")
+        else:
+            vlir_records = []
 
         return cls(
             path=path,
@@ -101,8 +176,7 @@ class CvtFile:
             date=date,
             fileinfo=fileinfo,
             seq_payload=seq_payload,
-            vlir_sizes=vlir_sizes,
-            vlir_payload=vlir_payload,
+            vlir_records=vlir_records,
         )
 
 
@@ -152,6 +226,68 @@ class AtariGeosDisk:
         if cvt.structure == 0:
             data_track, data_sector = self.write_chain(build_chain_blocks(cvt.seq_payload))
             total_blocks = 1 + len(build_chain_blocks(cvt.seq_payload))
+        elif cvt.structure == 1:
+            vlir_block = self.allocate_block()
+            vlir_payload = bytearray(BLOCK_PAYLOAD)
+            total_blocks = 2  # header + VLIR table sector
+            for record_index, record in enumerate(cvt.vlir_records):
+                offset = record_index * 2
+                if offset + 1 >= BLOCK_PAYLOAD:
+                    break
+                if record.count == 0 and record.last_sector_index == 0:
+                    vlir_payload[offset] = 0
+                    vlir_payload[offset + 1] = 0
+                    break
+                if record.count == 0 and record.last_sector_index == 0xFF:
+                    vlir_payload[offset] = 0
+                    vlir_payload[offset + 1] = 0xFF
+                    continue
+                if record.payload is None:
+                    raise ValueError(f"{cvt.path} VLIR record {record_index} has no payload")
+                chain: list[bytearray] = []
+                payload_offset = 0
+                for sector_index in range(record.count):
+                    block = bytearray(BLOCK_SIZE)
+                    if sector_index == record.count - 1:
+                        if record.last_data_record:
+                            last_payload_len = record.last_sector_index - 1
+                        else:
+                            last_payload_len = BLOCK_PAYLOAD
+                        end_offset = payload_offset + last_payload_len
+                        if end_offset > len(record.payload):
+                            raise ValueError(
+                                f"{cvt.path} VLIR record {record_index} data underrun "
+                                f"(wanted {last_payload_len} bytes in final sector)"
+                            )
+                        block[2 : 2 + last_payload_len] = record.payload[payload_offset:end_offset]
+                        payload_offset = end_offset
+                        block[0] = 0
+                        block[1] = record.last_sector_index
+                    else:
+                        end_offset = payload_offset + BLOCK_PAYLOAD
+                        if end_offset > len(record.payload):
+                            raise ValueError(
+                                f"{cvt.path} VLIR record {record_index} data underrun "
+                                f"(wanted full 254-byte sector)"
+                            )
+                        block[2:] = record.payload[payload_offset:end_offset]
+                        payload_offset = end_offset
+                    chain.append(block)
+                if payload_offset != len(record.payload):
+                    raise ValueError(
+                        f"{cvt.path} VLIR record {record_index} payload has trailing bytes "
+                        f"({len(record.payload) - payload_offset})"
+                    )
+                rec_track, rec_sector = self.write_chain(chain)
+                vlir_payload[offset] = rec_track
+                vlir_payload[offset + 1] = rec_sector
+                total_blocks += len(chain)
+            vlir_sector = bytearray(BLOCK_SIZE)
+            vlir_sector[0] = 0
+            vlir_sector[1] = 0xFF
+            vlir_sector[2:] = vlir_payload
+            self.blocks[vlir_block][:] = vlir_sector
+            data_track, data_sector = ts_from_block(vlir_block)
         else:
             raise ValueError(f"{cvt.path} uses unsupported GEOS structure {cvt.structure}")
 

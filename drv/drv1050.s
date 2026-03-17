@@ -27,6 +27,21 @@ PHASE4_SIORETA     = $04fb
 PHASE4_STATUS      = $04ec
 .endif
 
+.ifdef atarixl_desktop_smoketest
+PHASE5_SIOY        = $04d2
+PHASE5_SIODST      = $04d3
+PHASE5_SIOSECL     = $04d4
+PHASE5_SIOSECH     = $04d5
+PHASE5_SIOCMD      = $04d6
+PHASE5_SIORETA     = $04d7
+PHASE5_DCB_DDEVIC  = $04d8
+PHASE5_DCB_DUNIT   = $04d9
+PHASE5_CURDRIVE    = $04da
+PHASE5_CURDEVICE   = $04db
+PHASE5_CURTYPE     = $04dc
+PHASE5_OD_STAGE    = $04dd
+.endif
+
 .segment "drv1050"
 
 DriveAddy = $0300
@@ -195,6 +210,9 @@ CheckParams_2:
 	rts
 
 __OpenDisk:
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_OD_STAGE, $a0
+.endif
 .ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $10
 .endif
@@ -204,6 +222,9 @@ __OpenDisk:
 	and #%10111111
 	sta _driveType,y
 	jsr NewDisk
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_OD_STAGE, $a1
+.endif
 	bnex OpenDsk1
 .ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $11
@@ -219,6 +240,9 @@ __OpenDisk:
 @getDirHeadVisible:
 	.endif
 	jsr GetDirHead
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_OD_STAGE, $a2
+.endif
 	bnex OpenDsk1
 .ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $21
@@ -235,6 +259,9 @@ OpenDsk0:
 .endif
 	LoadW r5, curDirHead
 	jsr ChkDkGEOS
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_OD_STAGE, $a3
+.endif
 .ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $31
 	LoadB PHASE4_STATUS, $40
@@ -250,11 +277,17 @@ OpenDsk0:
 	ldy #r5
 	lda #18
 	jsr CopyFString
+.ifdef atarixl_desktop_smoketest
+	LoadB PHASE5_OD_STAGE, $a4
+.endif
 .ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $51
 .endif
 	ldx #0
 OpenDsk1:
+.ifdef atarixl_desktop_smoketest
+	stx PHASE5_OD_STAGE
+.endif
 .ifdef atarixl_disk_smoketest
 	LoadB PHASE4_STATUS, $ff
 .endif
@@ -797,10 +830,25 @@ ReadWriteBadParams:
 
 DoSioSectorIO:
 	jsr SetupSioDCB
+.ifdef atarixl_desktop_smoketest
+	lda DDEVIC
+	sta PHASE5_DCB_DDEVIC
+	lda DUNIT
+	sta PHASE5_DCB_DUNIT
+	lda curDrive
+	sta PHASE5_CURDRIVE
+	lda curDevice
+	sta PHASE5_CURDEVICE
+	lda curType
+	sta PHASE5_CURTYPE
+.endif
 	lda sioCommand
 	sta DCOMND
 .ifdef atarixl_disk_smoketest
 	sta PHASE4_SIOCMD
+.endif
+.ifdef atarixl_desktop_smoketest
+	sta PHASE5_SIOCMD
 .endif
 	lda sioDirection
 	sta DSTATS
@@ -813,11 +861,17 @@ DoSioSectorIO:
 .ifdef atarixl_disk_smoketest
 	sta PHASE4_SIOSECL
 .endif
+.ifdef atarixl_desktop_smoketest
+	sta PHASE5_SIOSECL
+.endif
 	lda sioSectorH
 	sta DAUX2
 .ifdef atarixl_disk_smoketest
 	sta PHASE4_SIOSECH
 	LoadB PHASE4_STATUS, $66
+.endif
+.ifdef atarixl_desktop_smoketest
+	sta PHASE5_SIOSECH
 .endif
 	php
 	sei
@@ -830,6 +884,14 @@ DoSioSectorIO:
 	lda DSTATS
 	sta PHASE4_SIODST
 	LoadB PHASE4_STATUS, $67
+	tya
+.endif
+.ifdef atarixl_desktop_smoketest
+	sta PHASE5_SIORETA
+	tya
+	sta PHASE5_SIOY
+	lda DSTATS
+	sta PHASE5_SIODST
 	tya
 .endif
 	tya

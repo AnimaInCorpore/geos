@@ -32,6 +32,29 @@ const { createHeadlessAutomation } = require(path.join(JSA8E_DIR, "headless"));
 
 const ENTRY_PC = 0x0881;
 const ADDR_STATUS = 0x04d0;
+const ADDR_ERROR_X = 0x04d1;
+const ADDR_SIO_Y = 0x04d2;
+const ADDR_SIO_DSTATS = 0x04d3;
+const ADDR_SIO_SECTOR_LO = 0x04d4;
+const ADDR_SIO_SECTOR_HI = 0x04d5;
+const ADDR_SIO_CMD = 0x04d6;
+const ADDR_SIO_RET_A = 0x04d7;
+const ADDR_DBG_DCB_DDEVIC = 0x04d8;
+const ADDR_DBG_DCB_DUNIT = 0x04d9;
+const ADDR_DBG_CURDRIVE = 0x04da;
+const ADDR_DBG_CURDEVICE = 0x04db;
+const ADDR_DBG_CURTYPE = 0x04dc;
+const ADDR_DBG_OD_STAGE = 0x04dd;
+const ADDR_SIO_BRIDGE = 0x3dc0;
+const ADDR_SIO_BRIDGE_SAVED_SSKCTL = 0x3ea5;
+const ADDR_OS_SSKCTL_SHADOW = 0x0232;
+const ADDR_POKEY_SKCTL = 0xd20f;
+const ADDR_PORTB = 0xd301;
+const ADDR_GETPTR_JUMP = 0xc298;
+const ADDR_COPYFSTRING = 0xc268;
+const ADDR_COPYFSTRING_IMPL = 0xa421;
+const ADDR_GETPTR_IMPL = 0xc30e;
+const ADDR_STAGE_COPYFSTRING = 0x3421;
 const ADDR_DRV_OPEN_DISK = 0x9014;
 const ADDR_DRV_NEW_DISK = 0x900c;
 const ADDR_DRV_GET_DIR_HEAD = 0x901a;
@@ -158,9 +181,14 @@ function statusLabel(status) {
     case 0x61: return "SET_DEVICE";
     case 0x62: return "OPEN_DISK";
     case 0x63: return "GET_FILE";
+    case 0x6a: return "OPEN_DISK_RET";
     case 0x70: return "DESKTOP_FOUND";
     case 0x80: return "START_APPL";
     case 0xe1: return "DESKTOP_LOAD_FAILED";
+    case 0xe2: return "OPEN_DISK_FAILED";
+    case 0xe3: return "GET_FILE_FAILED";
+    case 0xe4: return "DESKTOP_VER_A_FAILED";
+    case 0xe5: return "DESKTOP_VER_B_FAILED";
     case 0x00: return "NONE";
     default: return "$" + hex2(status);
   }
@@ -239,7 +267,15 @@ async function main() {
         "  status=" + statusLabel(status) +
         " ($" + hex2(status) + ")\r"
       );
-      if (status === 0x70 || status === 0x80 || status === 0xe1) {
+      if (
+        status === 0x70 ||
+        status === 0x80 ||
+        status === 0xe1 ||
+        status === 0xe2 ||
+        status === 0xe3 ||
+        status === 0xe4 ||
+        status === 0xe5
+      ) {
         decisive = true;
         break;
       }
@@ -256,6 +292,29 @@ async function main() {
     const irqVec = await readWord(api, ADDR_VEC_IRQ);
     const pcBytes = debugState ? await readBytes(api, debugState.pc, 8) : [];
     const stackTop = await readBytes(api, 0x01f0, 16);
+    const errorX = await api.debug.readMemory(ADDR_ERROR_X);
+    const sioY = await api.debug.readMemory(ADDR_SIO_Y);
+    const sioDstats = await api.debug.readMemory(ADDR_SIO_DSTATS);
+    const sioSectorLo = await api.debug.readMemory(ADDR_SIO_SECTOR_LO);
+    const sioSectorHi = await api.debug.readMemory(ADDR_SIO_SECTOR_HI);
+    const sioCmd = await api.debug.readMemory(ADDR_SIO_CMD);
+    const sioRetA = await api.debug.readMemory(ADDR_SIO_RET_A);
+    const dcbDevic = await api.debug.readMemory(ADDR_DBG_DCB_DDEVIC);
+    const dcbUnit = await api.debug.readMemory(ADDR_DBG_DCB_DUNIT);
+    const curDriveDbg = await api.debug.readMemory(ADDR_DBG_CURDRIVE);
+    const curDeviceDbg = await api.debug.readMemory(ADDR_DBG_CURDEVICE);
+    const curTypeDbg = await api.debug.readMemory(ADDR_DBG_CURTYPE);
+    const openDiskStage = await api.debug.readMemory(ADDR_DBG_OD_STAGE);
+    const bridgeBytes = await readBytes(api, ADDR_SIO_BRIDGE, 8);
+    const savedSskctl = await api.debug.readMemory(ADDR_SIO_BRIDGE_SAVED_SSKCTL);
+    const osSskctl = await api.debug.readMemory(ADDR_OS_SSKCTL_SHADOW);
+    const pokeySkctl = await api.debug.readMemory(ADDR_POKEY_SKCTL);
+    const portb = await api.debug.readMemory(ADDR_PORTB);
+    const getPtrBytes = await readBytes(api, ADDR_GETPTR_JUMP, 3);
+    const copyFStringBytes = await readBytes(api, ADDR_COPYFSTRING, 8);
+    const copyFStringImplBytes = await readBytes(api, ADDR_COPYFSTRING_IMPL, 8);
+    const getPtrImplBytes = await readBytes(api, ADDR_GETPTR_IMPL, 8);
+    const stageCopyFStringBytes = await readBytes(api, ADDR_STAGE_COPYFSTRING, 8);
 
     console.log("");
     console.log("=== Phase 5 Desktop Bootstrap Status ===");
@@ -274,6 +333,22 @@ async function main() {
     console.log("ROM-off vectors: NMI=$" + hex4(nmiVec) +
       " RESET=$" + hex4(resetVec) +
       " IRQ=$" + hex4(irqVec));
+    console.log("OpenDisk X=$" + hex2(errorX) +
+      " SIO cmd=$" + hex2(sioCmd) +
+      " sec=$" + hex4((sioSectorHi << 8) | sioSectorLo) +
+      " DSTATS=$" + hex2(sioDstats) +
+      " Y=$" + hex2(sioY) +
+      " Aret=$" + hex2(sioRetA));
+    console.log("DCB DDEVIC=$" + hex2(dcbDevic) + " DUNIT=$" + hex2(dcbUnit));
+    console.log("curDrive=$" + hex2(curDriveDbg) + " curDevice=$" + hex2(curDeviceDbg) + " curType=$" + hex2(curTypeDbg));
+    console.log("OpenDisk stage=$" + hex2(openDiskStage));
+    console.log("SIO bridge @3DC0: " + bridgeBytes.map(hex2).join(" "));
+    console.log("SSKCTL saved=$" + hex2(savedSskctl) + " OS=$" + hex2(osSskctl) + " POKEY=$" + hex2(pokeySkctl));
+    console.log("PORTB=$" + hex2(portb) + " GetPtrCurDkNm JMP bytes: " + getPtrBytes.map(hex2).join(" "));
+    console.log("CopyFString @C268: " + copyFStringBytes.map(hex2).join(" "));
+    console.log("CopyFString impl @A421: " + copyFStringImplBytes.map(hex2).join(" "));
+    console.log("Staged CopyFString @3421: " + stageCopyFStringBytes.map(hex2).join(" "));
+    console.log("GetPtrCurDkNm impl @C30E: " + getPtrImplBytes.map(hex2).join(" "));
     console.log("Stack $01F0-$01FF: " + stackTop.map(hex2).join(" "));
     console.log("");
 
@@ -282,7 +357,7 @@ async function main() {
       process.exit(2);
     }
 
-    if (status === 0xe1) {
+    if (status >= 0xe1 && status <= 0xe5) {
       console.log("Bootstrap reached EnterDeskTop but desktop load failed.");
       console.log("Most common cause: ATR does not contain a compatible DESK TOP file.");
       process.exit(1);
