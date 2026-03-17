@@ -99,6 +99,11 @@ _NMIHandler:
 
 @is_vbi:
 	sta NMIRES          ; acknowledge VBI only
+	; Keep NMI source mask pinned to VBI-only.  Some legacy C64 app paths can
+	; accidentally write ANTIC NMIEN while running on Atari and re-enable DLI,
+	; which causes rapid sequential DLI firings that starve the main loop.
+	lda nmiEnableMask
+	sta NMIEN
 	txa
 	pha
 	tya
@@ -115,6 +120,12 @@ _NMIHandler:
 
 @is_dli:
 	sta NMIRES          ; acknowledge DLI; without this the NMI re-fires immediately
+	; Recover from accidental DLI enablement by restoring the intended mask.
+	lda nmiEnableMask
+	sta NMIEN
+	; Re-assert display and CPU vectors even on DLI entry so legacy code that
+	; scribbles ANTIC/page-2 state cannot starve the system before next VBI.
+	jsr MaintainAtariDisplay
 	pla
 	rti
 
