@@ -50,7 +50,7 @@ Update rule: after each completed porting step, change exactly one matching chec
 
 - [x] 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
 - [x] 23. Connect VBI counter to `kernal/time/` clock routines
-- [ ] 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
+- [x] 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
 - [ ] 25. Regression-test all graphics, font, menu, dialog, and file operations
 - [ ] 26. Tune timing loops (Atari 1.79 MHz vs C64 1 MHz; cycle-count-dependent delays differ)
 
@@ -61,6 +61,8 @@ Update rule: after each completed porting step, change exactly one matching chec
 
 ### Phase 6 Notes
 
+- 2026-03-17: Completed step 24 by adding `input/mse_stmouse.s` as a dedicated Atari ST mouse input driver for joystick port 1 (`PORTA` high nibble + `TRIG1`), with gray-code quadrature decoding adapted from `input/amigamse.s` and Atari-specific hardware reads/clamping. Updated `Makefile` so `mse_stmouse` is built as a selectable input binary (`build/atarixl/input/mse_stmouse.bin`) and can be used via `INPUT=mse_stmouse`.
+- 2026-03-17: Validation for step 24 changes: `make clean && make VARIANT=atarixl DRIVE=drv1050 INPUT=mse_stmouse all` (PASS). Regression check of existing Atari disk bring-up path after integration: `make clean && make atarixl-disk-smoketest && node tools/phase4_disk_run.js` (PASS: `PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`).
 - 2026-03-17: Completed step 23 by replacing the Atari build's CIA-based `_DoUpdateTime` path in `kernal/time/time1.s` with a VBI-backed clock path. The Atari path now reads `RTCLOK` (`$12-$14`), accumulates elapsed VBI ticks using PAL/NTSC-aware thresholds (`PAL_R` bit 3 => 50/60 Hz), advances `seconds/minutes/hour`, and calls `DateUpdate` on midnight rollover. Added Atari clock state variables (`atariClockInit`, `atariClockSubTicks`, `atariRtcDelta*`, `atariRtcLast*`) to `kernal/vars/vars.s`, and replaced the Atari alarm-audio branch with a hardware-safe countdown stub that avoids SID writes. Validation: `make clean && make -j4 atarixl`; `make clean && make atarixl-disk-smoketest && node tools/phase4_disk_run.js` (PASS: `PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`).
 - 2026-03-17: Completed step 22 by replacing the Atari build's C64 VIC-II sprite path with a dedicated P/M implementation in `kernal/sprites/sprites_atari.s` and wiring it in `Makefile` (`VARIANT=atarixl` now links `sprites_atari.s`, non-Atari builds still link `sprites.s`). The new Atari sprite layer maps GEOS sprite 0 to player 0+1 (16-pixel cursor) and sprite 1 to player 2 (text prompt), preserving `DrawSprite`/`PosSprite`/`EnablSprite`/`DisablSprite` syscall contracts while rendering from GEOS sprite bitmaps into PM memory at `$7800`.
 - 2026-03-17: Updated Atari P/M init in `kernal/hw/hw_atari.s` to fully reset player/missile registers before enable, including explicit clears of `GRAFP0_W`..`GRAFP3_W` and `GRAFM_W`, and enabled P/M DMA in the normal display path (`DMACTL=$3E`).

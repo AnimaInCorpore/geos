@@ -137,7 +137,7 @@ WSYNC    = $D40A ; Write: halt CPU until next horizontal blank
 VCOUNT   = $D40B ; Vertical line counter (read)
 PENH     = $D40C ; Light pen horizontal position (read)
 PENV     = $D40D ; Light pen vertical position (read)
-NMIEN    = $D40E ; NMI enable: bit6=VBI, bit5=DLI
+NMIEN    = $D40E ; NMI enable: bit7=DLI, bit6=VBI
 NMIST    = $D40F ; NMI status (read): bit7=DLI pending, bit6=VBI pending
 NMIRES   = $D40F ; NMI acknowledge/reset (write; use for VBI acknowledge)
 

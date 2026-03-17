@@ -265,6 +265,7 @@ DRIVER_SOURCES= \
 	drv/drv1571.bin \
 	drv/drv1581.bin \
 	input/joydrv_atari.bin \
+	input/mse_stmouse.bin \
 	input/joydrv.bin \
 	input/amigamse.bin \
 	input/lightpen.bin \
@@ -305,6 +306,7 @@ ALL_BINS= \
 	$(BUILD_DIR)/drv/drv1571.bin \
 	$(BUILD_DIR)/drv/drv1581.bin \
 	$(BUILD_DIR)/input/joydrv_atari.bin \
+	$(BUILD_DIR)/input/mse_stmouse.bin \
 	$(BUILD_DIR)/input/joydrv.bin \
 	$(BUILD_DIR)/input/amigamse.bin \
 	$(BUILD_DIR)/input/lightpen.bin \
@@ -457,6 +459,9 @@ $(BUILD_DIR)/drv/drv1581.bin: $(BUILD_DIR)/drv/drv1581.o drv/drv1581.cfg $(DEPS)
 
 $(BUILD_DIR)/input/joydrv_atari.bin: $(BUILD_DIR)/input/joydrv_atari.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/joydrv_atari.o -o $@
+
+$(BUILD_DIR)/input/mse_stmouse.bin: $(BUILD_DIR)/input/mse_stmouse.o $(INPUTCFG) $(DEPS)
+	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/mse_stmouse.o -o $@
 
 $(BUILD_DIR)/input/amigamse.bin: $(BUILD_DIR)/input/amigamse.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/amigamse.o -o $@
