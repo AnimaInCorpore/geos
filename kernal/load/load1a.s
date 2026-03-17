@@ -230,6 +230,11 @@ _StartAppl:
 	cli                
 	jmp MainLoop
 .else
+.ifdef atarixl
+	; Atari desktop/application startup can rely on VBI-driven state even
+	; during the first entry-vector call. Keep IRQ/NMI servicing active.
+	cli
+.endif
 	jmp _MNLP
 .endif
 
