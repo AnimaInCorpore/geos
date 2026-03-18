@@ -71,28 +71,26 @@ PHASE5_STATUS_DESKTOP_VISIBLE = $82
 ; Paint once, then return so the frame remains stable on screen.
 ; ---------------------------------------------------------------
 DesktopStart:
-        lda init_done
-        beq @paint
-        jmp DesktopHold
-
-@paint:
         sei
         cld
-        lda #0
-        sta NMIEN
-        inc init_done
+        jsr GS_ClrScr
 
         ; --- Menu bar (rows 0-15): white ---
         lda #<SCREEN_BASE
         sta r0
         lda #>SCREEN_BASE
         sta r0+1
+        lda #<BACK_SCR_BASE
+        sta r1
+        lda #>BACK_SCR_BASE
+        sta r1+1
         ldx #MENU_ROWS
 @menuRows:
         ldy #SC_BYTE_WIDTH - 1
 @menuCols:
         lda #$ff
         sta (r0),y
+        sta (r1),y
         dey
         bpl @menuCols
         clc
@@ -101,7 +99,15 @@ DesktopStart:
         sta r0
         bcc :+
         inc r0+1
-:       dex
+:       
+        clc
+        lda r1
+        adc #SC_BYTE_WIDTH
+        sta r1
+        bcc :+
+        inc r1+1
+:       
+        dex
         bne @menuRows
 .ifdef atarixl_desktop_smoketest
         LoadB PHASE5_STATUS, $81
@@ -112,12 +118,17 @@ DesktopStart:
         sta r0
         lda #>ICON1_FRONT
         sta r0+1
+        lda #<($6000 + (48 * SC_BYTE_WIDTH) + 4)
+        sta r1
+        lda #>($6000 + (48 * SC_BYTE_WIDTH) + 4)
+        sta r1+1
         ldx #ICON_HEIGHT
 @icon1Rows:
         ldy #ICON_WIDTH - 1
 @icon1Cols:
         lda #$f0
         sta (r0),y
+        sta (r1),y
         dey
         bpl @icon1Cols
         clc
@@ -126,6 +137,13 @@ DesktopStart:
         sta r0
         bcc :+
         inc r0+1
+:       
+        clc
+        lda r1
+        adc #SC_BYTE_WIDTH
+        sta r1
+        bcc :+
+        inc r1+1
 :       
         dex
         bne @icon1Rows
@@ -137,12 +155,17 @@ DesktopStart:
         sta r0
         lda #>ICON2_FRONT
         sta r0+1
+        lda #<($6000 + (48 * SC_BYTE_WIDTH) + 20)
+        sta r1
+        lda #>($6000 + (48 * SC_BYTE_WIDTH) + 20)
+        sta r1+1
         ldx #ICON_HEIGHT
 @icon2Rows:
         ldy #ICON_WIDTH - 1
 @icon2Cols:
         lda #$0f
         sta (r0),y
+        sta (r1),y
         dey
         bpl @icon2Cols
         clc
@@ -151,6 +174,13 @@ DesktopStart:
         sta r0
         bcc :+
         inc r0+1
+:       
+        clc
+        lda r1
+        adc #SC_BYTE_WIDTH
+        sta r1
+        bcc :+
+        inc r1+1
 :       
         dex
         bne @icon2Rows
@@ -163,12 +193,17 @@ DesktopStart:
         sta r0
         lda #>BOTTOM_FRONT
         sta r0+1
+        lda #<(BACK_SCR_BASE + ((SC_PIX_HEIGHT - 16) * SC_BYTE_WIDTH))
+        sta r1
+        lda #>(BACK_SCR_BASE + ((SC_PIX_HEIGHT - 16) * SC_BYTE_WIDTH))
+        sta r1+1
         ldx #16
 @bottomRows:
         ldy #SC_BYTE_WIDTH - 1
 @bottomCols:
         lda #$11
         sta (r0),y
+        sta (r1),y
         dey
         bpl @bottomCols
         clc
@@ -177,6 +212,13 @@ DesktopStart:
         sta r0
         bcc :+
         inc r0+1
+:       
+        clc
+        lda r1
+        adc #SC_BYTE_WIDTH
+        sta r1
+        bcc :+
+        inc r1+1
 :       dex
         bne @bottomRows
 .ifdef atarixl_desktop_smoketest
@@ -193,7 +235,3 @@ DesktopHold:
         LoadB PHASE5_STATUS, PHASE5_STATUS_DESKTOP_VISIBLE
 .endif
         jmp DesktopHold
-
-; One-byte flag, lives in BSS / uninitialised RAM after CODE
-init_done:
-        .byte 0
