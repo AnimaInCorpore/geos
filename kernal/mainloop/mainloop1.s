@@ -33,10 +33,11 @@
 
 _MainLoop:
 .ifdef atarixl
-	; DESK TOP's C64 SID init writes 0 to $D40E (= NMIEN on Atari) to silence audio.
-	; Restore VBI enable here so the NMI handler can call MaintainAtariDisplay to fix
-	; DMACTL and display-list pointers that SID init also corrupts ($D400 = DMACTL).
-	lda nmiEnableMask
+	; DESK TOP's C64 SID init writes 0 to $D40E (= NMIEN on Atari) to silence
+	; audio. Restore VBI enable here so the NMI handler can keep reasserting the
+	; Atari display state and the desktop keeps drawing with interrupts live.
+	lda #$40
+	sta nmiEnableMask
 	sta NMIEN
 .endif
 .ifdef wheels_screensaver

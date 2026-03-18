@@ -341,9 +341,13 @@ atarixl-desktop-bootstrap:
 		if [ -e $(DESKTOP_CVT) ]; then \
 			PHASE5_CVT="$(DESKTOP_CVT)"; \
 		elif [ -e GEOS64/GEOS64.D64 ]; then \
-			echo "Extracting DESK TOP convert file from GEOS64/GEOS64.D64"; \
-			$(C1541) GEOS64/GEOS64.D64 -geosread "DESK TOP" build/atarixl/desktop.cvt >/dev/null; \
-			PHASE5_CVT="build/atarixl/desktop.cvt"; \
+			echo "Extracting GEOS desktop files from GEOS64/GEOS64.D64"; \
+			mkdir -p build/atarixl/geos64_cvt; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "DESK TOP" build/atarixl/geos64_cvt/desk_top.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "CONFIGURE" build/atarixl/geos64_cvt/configure.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "JOYSTICK" build/atarixl/geos64_cvt/joystick.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "mps-803" build/atarixl/geos64_cvt/mps_803.cvt >/dev/null; \
+			PHASE5_CVT="build/atarixl/geos64_cvt/configure.cvt build/atarixl/geos64_cvt/desk_top.cvt build/atarixl/geos64_cvt/joystick.cvt build/atarixl/geos64_cvt/mps_803.cvt"; \
 		fi; \
 	fi; \
 	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/geos.atr
@@ -355,12 +359,25 @@ atarixl-desktop-smoke-bootstrap:
 		if [ -e $(DESKTOP_CVT) ]; then \
 			PHASE5_CVT="$(DESKTOP_CVT)"; \
 		elif [ -e GEOS64/GEOS64.D64 ]; then \
-			echo "Extracting DESK TOP convert file from GEOS64/GEOS64.D64"; \
-			$(C1541) GEOS64/GEOS64.D64 -geosread "DESK TOP" build/atarixl/desktop.cvt >/dev/null; \
-			PHASE5_CVT="build/atarixl/desktop.cvt"; \
+			echo "Extracting GEOS desktop files from GEOS64/GEOS64.D64"; \
+			mkdir -p build/atarixl/geos64_cvt; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "DESK TOP" build/atarixl/geos64_cvt/desk_top.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "CONFIGURE" build/atarixl/geos64_cvt/configure.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "JOYSTICK" build/atarixl/geos64_cvt/joystick.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "mps-803" build/atarixl/geos64_cvt/mps_803.cvt >/dev/null; \
+			PHASE5_CVT="build/atarixl/geos64_cvt/configure.cvt build/atarixl/geos64_cvt/desk_top.cvt build/atarixl/geos64_cvt/joystick.cvt build/atarixl/geos64_cvt/mps_803.cvt"; \
 		fi; \
 	fi; \
 	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1 -D atarixl_desktop_smoke_frame=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/geos.atr
+
+atarixl-native-desktop-bootstrap:
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' build/atarixl/desktop_atari.cvt
+	@PHASE5_CVT="build/atarixl/desktop_atari.cvt"; \
+	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/geos.atr
+
+atarixl-native-desktop-run:
+	@$(MAKE) atarixl-native-desktop-bootstrap
+	node tools/phase5_desktop_run.js --native-desktop
 
 atarixl-desktop-run:
 	@$(MAKE) atarixl-desktop-bootstrap
@@ -660,6 +677,24 @@ $(BUILD_DIR)/siov_bridge_diag.xex: $(BUILD_DIR)/siov_bridge_diag.bin
 	printf "\x00\x0A\xFF\x0B" >> $@
 	cat $(BUILD_DIR)/siov_bridge_diag.bin >> $@
 	printf "\xE0\x02\xE1\x02\x00\x0A" >> $@
+
+# Atari-native minimal GEOS desktop application (replaces C64 DESK TOP binary).
+# Loads at APP_RAM ($0400), uses only KERNAL jumptable calls.
+$(BUILD_DIR)/desktop_atari.bin: apps/desktop_atari.s apps/desktop_atari.cfg
+	@mkdir -p $(dir $@)
+	$(AS) -I inc apps/desktop_atari.s -o $(BUILD_DIR)/desktop_atari.o
+	$(LD) -C apps/desktop_atari.cfg $(BUILD_DIR)/desktop_atari.o \
+	      -o $@ -m $(BUILD_DIR)/desktop_atari.map
+
+$(BUILD_DIR)/desktop_atari.cvt: $(BUILD_DIR)/desktop_atari.bin tools/make_geos_cvt.py
+	python3 tools/make_geos_cvt.py \
+	    --dos-name "DESK TOP" \
+	    --class-name "Desktop" \
+	    --load-addr 0x0400 \
+	    --start-vec 0x0400 \
+	    --geos-type 6 \
+	    --str-type 0 \
+	    $< $@
 endif
 
 $(BUILD_DIR)/kernal/kernal2.bin: $(PREFIXED_KERNAL2_OBJS) kernal/kernal2_$(VARIANT).cfg

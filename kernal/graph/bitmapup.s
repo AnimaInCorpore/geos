@@ -78,28 +78,16 @@ BitmapUpHelp:
 	and #$7F
 	cmp #$20
 .else
-	CmpBI r1L, $20
 .endif
-	bcc @1
-	inc r5H
-	inc r6H
-@1:	asl
-	asl
-	asl
-	tay
-@2:	sty r9L
+	ldy r1L
+@1:	sty r9L
 	jsr BitmapDecode
 	ldy r9L
 	sta (r5),y
 	sta (r6),y
-	tya
-	addv 8
-	bcc @3
-	inc r5H
-	inc r6H
-@3:	tay
+	iny
 	dec r3H
-	bne @2
+	bne @1
 	rts
 .ifdef bsw128
 ; 80 column version
@@ -254,4 +242,3 @@ IndirectR13:
 IndirectR14:
 	jmp (r14)
 .endif
-

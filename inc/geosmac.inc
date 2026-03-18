@@ -374,7 +374,7 @@
 	beq :+
 	dec nmiDisableDepth
 	bne :+
-	lda nmiEnableMask
+	lda #$40
 	sta NMIEN
 :
 .endmacro

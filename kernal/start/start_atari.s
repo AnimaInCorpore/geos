@@ -203,6 +203,11 @@ _ResetHandle:
 	; Restore it so _MainLoop's NMIEN restore keeps VBI active.
 	lda #$40
 	sta nmiEnableMask
+.ifdef atarixl
+	; Atari is always 40-column. graphMode is shared with the 128 code paths,
+	; so force the 40-column bit pattern before any bitmap/text code runs.
+	LoadB graphMode, GR_40
+.endif
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $44
 .endif

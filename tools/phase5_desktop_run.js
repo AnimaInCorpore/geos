@@ -15,6 +15,7 @@
 //   $60 EnterDeskTop entered
 //   $70 DESK TOP file found and accepted
 //   $80 StartAppl handoff reached
+//   $82 Atari-native desktop is visibly painted
 //   $81 Desktop smoke frame is visible (fallback path, not real DESK TOP app rendering)
 //   $E1 desktop lookup/open path failed (for example missing DESK TOP on disk)
 //
@@ -71,6 +72,8 @@ const OFF_GHST_VEC = 75;
 const ADDR_ANTIC_DMACTL = 0xd400;
 const ADDR_ANTIC_DLISTL = 0xd402;
 const ADDR_ANTIC_DLISTH = 0xd403;
+const ADDR_SCREEN_BASE = 0x4000;
+const ADDR_BACK_SCR_BASE = 0x6000;
 const ADDR_OS_SDMCTL = 0x022f;
 const ADDR_OS_SDLSTL = 0x0230;
 const ADDR_OS_SDLSTH = 0x0231;
@@ -124,6 +127,7 @@ function parseArgs(argv) {
     bootTimeoutMs: BOOT_TIMEOUT_MS,
     postCycles: 0,
     allowSmokeFrame: false,
+    nativeDesktop: false,
     screenshotPath: "",
   };
 
@@ -191,6 +195,10 @@ function parseArgs(argv) {
       options.allowSmokeFrame = true;
       continue;
     }
+    if (arg === "--native-desktop") {
+      options.nativeDesktop = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       console.log(
         "Usage: node tools/phase5_desktop_run.js [options]\n" +
@@ -204,6 +212,7 @@ function parseArgs(argv) {
         "  --boot-timeout-ms <ms>   Entry-breakpoint timeout\n" +
         "  --post-cycles <count>    Extra cycles before pause/artifacts\n" +
         "  --allow-smoke-frame      Treat $81 smoke-frame fallback as success\n" +
+        "  --native-desktop         Accept the Atari-native desktop handoff at $80\n" +
         "  --screenshot <path>      Save a PNG screenshot artifact"
       );
       process.exit(0);
@@ -236,6 +245,7 @@ function statusLabel(status) {
     case 0x6a: return "OPEN_DISK_RET";
     case 0x70: return "DESKTOP_FOUND";
     case 0x80: return "START_APPL";
+    case 0x82: return "NATIVE_DESKTOP_VISIBLE";
     case 0x81: return "SMOKE_FRAME_VISIBLE";
     case 0xe1: return "DESKTOP_LOAD_FAILED";
     case 0xe2: return "OPEN_DISK_FAILED";
@@ -325,6 +335,9 @@ function initRamTouchesFontPointers(bytes) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.nativeDesktop && options.postCycles === 0) {
+    options.postCycles = 3_000_000;
+  }
 
   for (const [label, p] of [["XEX", options.xexPath], ["ATR", options.diskPath], ["OS ROM", options.osPath]]) {
     if (!fs.existsSync(p)) {
@@ -557,6 +570,10 @@ async function main() {
         decisive = true;
         break;
       }
+      if (options.nativeDesktop && (status === 0x80 || status === 0x82)) {
+        decisive = true;
+        break;
+      }
       if (options.allowSmokeFrame && status === 0x81) {
         decisive = true;
         break;
@@ -596,6 +613,10 @@ async function main() {
       }
     }
 
+    if (options.nativeDesktop) {
+      await api.system.start();
+      await api.system.waitForCycles({ count: options.pollChunk });
+    }
     await api.system.pause();
     const debugState = await api.debug.getDebugState();
     const bankState = await api.debug.getBankState();
@@ -648,6 +669,8 @@ async function main() {
     const a914bytes = await readBytes(api, ADDR_A914, 8);
     const a000bytes = await readBytes(api, ADDR_A000, 16);
     const appMainRawBytes = await readBytes(api, ADDR_APPMAIN_RAW, 4);
+    const screenBytes = await readBytes(api, ADDR_SCREEN_BASE, 16);
+    const backScreenBytes = await readBytes(api, ADDR_BACK_SCR_BASE, 16);
     // GEOS zero-page font pointers and BitmapUp state
     const r0L = await api.debug.readMemory(0x02 + GEOS_ZP_OFFSET);
     const r0H = await api.debug.readMemory(0x03 + GEOS_ZP_OFFSET);
@@ -719,6 +742,8 @@ async function main() {
     console.log("nmiEnableMask=$" + hex2(nmiEnableMask) + " NMIEN=$" + hex2(nmien) + " @A914: " + a914bytes.map(hex2).join(" "));
     console.log("@A000 (KERNAL_MID/DESK_TOP?): " + a000bytes.map(hex2).join(" "));
     console.log("appMain raw bytes @$849B: " + appMainRawBytes.map(hex2).join(" ") + " (word=$" + hex4((appMainRawBytes[1] << 8) | appMainRawBytes[0]) + ")");
+    console.log("SCREEN_BASE @$4000: " + screenBytes.map(hex2).join(" "));
+    console.log("BACK_SCR_BASE @$6000: " + backScreenBytes.map(hex2).join(" "));
     console.log("BitmapUp: r0=$" + hex4(r0addr) + " r3L=$" + hex2(r3L) + " r3H=$" + hex2(r3H) + " r9H=$" + hex2(r9H) + " r14=$" + hex4(r14addr));
     console.log("r0 data: " + r0bytes.map(hex2).join(" "));
     console.log("r14 vec: " + r14bytes.map(hex2).join(" "));
@@ -922,8 +947,18 @@ async function main() {
       }
       console.log("Bootstrap reached visible desktop smoke-frame fallback.");
     }
+    if (status === 0x82) {
+      if (!options.nativeDesktop) {
+        console.log("Reached native-desktop visible marker ($82) without --native-desktop.");
+        process.exit(1);
+      }
+      console.log("Bootstrap reached visible Atari-native desktop.");
+    }
     if (status === 0x80) {
       console.log("Bootstrap reached desktop handoff status.");
+      if (options.nativeDesktop) {
+        console.log("Native Atari desktop handoff accepted; waiting for desktop render.");
+      }
     }
     if (fontWatchHit) {
       console.log("Font pointer zeroed during desktop handoff; inspect trace above.");

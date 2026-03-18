@@ -23,6 +23,7 @@
 
 .import MainLoop
 .import CallRoutine
+.import LdApplic
 .import GetFile
 .import OpenDisk
 .import SetDevice
@@ -180,7 +181,7 @@ EDT6:	lda TempCurDrive
 @phase5DeskLoop:
 	jmp @phase5DeskLoop
 .else
-	jmp _StartAppl
+	jmp LdApplic
 .endif
 .endif
 .endif
@@ -221,6 +222,10 @@ _StartAppl:
 	jsr _UseSystemFont
 .ifdef atarixl
 	jsr UNK_4
+	LoadB graphMode, GR_40
+.endif
+.ifdef atarixl
+	MoveW fileHeader+O_GHST_VEC, appMain
 .endif
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $80

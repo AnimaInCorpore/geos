@@ -29,6 +29,25 @@ ClrScr:
 	sta r1L
 	LoadB r0H, >SCREEN_BASE
 	LoadB r1H, >BACK_SCR_BASE
+.elseif .defined(atarixl)
+	LoadW r0, SCREEN_BASE
+	LoadW r1, BACK_SCR_BASE
+	ldx #SC_PIX_HEIGHT
+@a1:	ldy #SC_BYTE_WIDTH - 1
+@a2:	lda #backPattern1
+	sta (r0),y
+	sta (r1),y
+	dey
+	lda #backPattern2
+	sta (r0),y
+	sta (r1),y
+	dey
+	bpl @a2
+	AddVW SC_BYTE_WIDTH, r0
+	AddVW SC_BYTE_WIDTH, r1
+	dex
+	bne @a1
+	rts
 .else
 	LoadW r0, SCREEN_BASE
 	LoadW r1, BACK_SCR_BASE
