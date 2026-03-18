@@ -11,6 +11,7 @@
 ; keyboard.s
 .import _DoKeyboardScan
 .import atari_dlist
+.import AtariColorTable
 .import _ResetHandle
 
 ; vars.s
@@ -267,4 +268,16 @@ MaintainAtariDisplay:
 	lda #ATARI_DMACTL_ACTIVE
 	sta DMACTL
 	sta SDMCTL
+	; Restore GTIA color registers: DESK TOP's C64 VIC init writes to $D016-$D01A
+	; which map to Atari COLPF0-COLBK, corrupting the display palette every frame.
+	lda AtariColorTable+0
+	sta COLBK
+	lda AtariColorTable+1
+	sta COLPF0
+	lda AtariColorTable+2
+	sta COLPF1
+	lda AtariColorTable+3
+	sta COLPF2
+	lda AtariColorTable+4
+	sta COLPF3
 	rts

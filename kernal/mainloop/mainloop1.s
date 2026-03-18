@@ -9,6 +9,10 @@
 .include "config.inc"
 .include "kernal.inc"
 .include "c64.inc"
+.ifdef atarixl
+.include "atari.inc"
+.import nmiEnableMask
+.endif
 
 .import _DoUpdateTime
 .import _ExecuteProcesses
@@ -28,6 +32,13 @@
 .segment "mainloop1"
 
 _MainLoop:
+.ifdef atarixl
+	; DESK TOP's C64 SID init writes 0 to $D40E (= NMIEN on Atari) to silence audio.
+	; Restore VBI enable here so the NMI handler can call MaintainAtariDisplay to fix
+	; DMACTL and display-list pointers that SID init also corrupts ($D400 = DMACTL).
+	lda nmiEnableMask
+	sta NMIEN
+.endif
 .ifdef wheels_screensaver
 .import RunScreensaver
 	bit saverStatus
@@ -76,4 +87,3 @@ _MNLP:	jsr CallRoutine
 .ifdef bsw128 ; XXX junk
 	.byte $88, $88
 .endif
-

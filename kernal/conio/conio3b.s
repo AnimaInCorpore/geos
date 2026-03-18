@@ -94,4 +94,3 @@ GetChWdth1:
 @2:	lda PrvCharWidth
 	rts
 .endif
-

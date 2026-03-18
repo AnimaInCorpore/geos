@@ -44,6 +44,7 @@
 .import GetFHdrInfo
 .import ReadFile
 .import verifyFlag
+.import nmiEnableMask
 
 .ifdef usePlus60K
 .import DetectPlus60K
@@ -198,6 +199,10 @@ _ResetHandle:
 	.word $0500
 	.word dirEntryBuf
 	.byte 0
+	; i_FillRam zeros $8400-$88FF which includes nmiEnableMask ($88AB).
+	; Restore it so _MainLoop's NMIEN restore keeps VBI active.
+	lda #$40
+	sta nmiEnableMask
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $44
 .endif
@@ -349,9 +354,9 @@ DisableRomStubTemplateEnd:
 .ifdef atarixl_desktop_smoketest
 ; Install staged bootstrap payloads after OS ROM has been disabled.
 ; Stage layout at $2000:
-;   +$0000 .. +$0FFF : $C000-$CFFF
-;   +$1000 .. +$2FFF : $A000-$BFFF
-;   +$3000 .. +$57FF : $D800-$FFFF (includes vectors)
+;   +$0000 .. +$0FFF : $C000-$CFFF  (KERNALHDR + KERNAL_LO, 16 pages)
+;   +$1000 .. +$2FFF : $A000-$BFFF  (KERNAL_MID, 32 pages)
+;   +$3000 .. +$57FF : $D800-$FFFF  (KERNAL_HI + VECTORS, 40 pages)
 Phase5InstallBootstrapPayloads:
 	LoadW r0, PHASE5_STAGE_BASE
 	LoadW r1, $c000

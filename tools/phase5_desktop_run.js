@@ -75,13 +75,25 @@ const ADDR_OS_SDMCTL = 0x022f;
 const ADDR_OS_SDLSTL = 0x0230;
 const ADDR_OS_SDLSTH = 0x0231;
 const ADDR_GTIA_COLBK = 0xd01a;
+const ADDR_NMI_ENABLE_MASK = 0x88ab;
+const ADDR_NMIEN = 0xd40e;
+const ADDR_A914 = 0xa914;
+const ADDR_A000 = 0xa000;
+const ADDR_APPMAIN_RAW = 0x849b;
+const ADDR_USE_SYSTEM_FONT = 0xc14b;
 const ADDR_GTIA_COLPF0 = 0xd016;
 const ADDR_GTIA_COLPF1 = 0xd017;
 const ADDR_GTIA_COLPF2 = 0xd018;
 const ADDR_GTIA_COLPF3 = 0xd019;
+const ADDR_INIT_RAM = 0xc181;
+const ADDR_LOAD_CHAR_SET = 0xc1cc;
+const GEOS_ZP_OFFSET = 0x7e;
+const ADDR_FONT_CUR_INDEX_TABLE = 0x002a + GEOS_ZP_OFFSET;
+const ADDR_FONT_CARD_DATA_PNTR = 0x002c + GEOS_ZP_OFFSET;
 const POLL_CHUNK = 20_000;
 const MAX_CHUNKS = 500;
 const BOOT_TIMEOUT_MS = 30_000;
+const FONT_WATCH_POLL_CHUNK = 50;
 
 function resolveInputPath(rawPath) {
   if (!rawPath) {
@@ -249,6 +261,68 @@ async function readBytes(api, addr, count) {
   return bytes;
 }
 
+async function readFontPointers(api) {
+  const curIdxL = await api.debug.readMemory(ADDR_FONT_CUR_INDEX_TABLE);
+  const curIdxH = await api.debug.readMemory(ADDR_FONT_CUR_INDEX_TABLE + 1);
+  const cardDataL = await api.debug.readMemory(ADDR_FONT_CARD_DATA_PNTR);
+  const cardDataH = await api.debug.readMemory(ADDR_FONT_CARD_DATA_PNTR + 1);
+  return {
+    curIndexTable: ((curIdxH << 8) | curIdxL) & 0xffff,
+    cardDataPntr: ((cardDataH << 8) | cardDataL) & 0xffff,
+  };
+}
+
+function formatFontPointers(fontState) {
+  if (!fontState) {
+    return "curIndexTable=$???? cardDataPntr=$????";
+  }
+  return "curIndexTable=$" + hex4(fontState.curIndexTable) +
+    " cardDataPntr=$" + hex4(fontState.cardDataPntr);
+}
+
+function formatInitRamEntries(bytes) {
+  const parts = [];
+  let i = 0;
+  while (i + 2 < bytes.length) {
+    const addr = bytes[i] | (bytes[i + 1] << 8);
+    const count = bytes[i + 2] | 0;
+    i += 3;
+    if (addr === 0 && count === 0) {
+      break;
+    }
+    const values = bytes.slice(i, i + count);
+    parts.push(
+      "$" + hex4(addr) + " len=" + count +
+      " vals=" + values.map(hex2).join(" ")
+    );
+    i += count;
+  }
+  return parts;
+}
+
+function initRamTouchesFontPointers(bytes) {
+  let i = 0;
+  while (i + 2 < bytes.length) {
+    const addr = bytes[i] | (bytes[i + 1] << 8);
+    const count = bytes[i + 2] | 0;
+    i += 3;
+    if (addr === 0 && count === 0) {
+      break;
+    }
+    if (count > 0) {
+      const end = (addr + count - 1) & 0xffff;
+      const touches =
+        (addr <= ADDR_FONT_CUR_INDEX_TABLE && end >= ADDR_FONT_CUR_INDEX_TABLE) ||
+        (addr <= ADDR_FONT_CUR_INDEX_TABLE + 1 && end >= ADDR_FONT_CUR_INDEX_TABLE + 1) ||
+        (addr <= ADDR_FONT_CARD_DATA_PNTR && end >= ADDR_FONT_CARD_DATA_PNTR) ||
+        (addr <= ADDR_FONT_CARD_DATA_PNTR + 1 && end >= ADDR_FONT_CARD_DATA_PNTR + 1);
+      if (touches) return true;
+    }
+    i += count;
+  }
+  return false;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
@@ -276,6 +350,8 @@ async function main() {
 
     const xexData = new Uint8Array(fs.readFileSync(options.xexPath));
     const diskData = new Uint8Array(fs.readFileSync(options.diskPath));
+    const fontWriteEvents = [];
+    let fontWatchArmed = false;
 
     await api.debug.setBreakpoints([ENTRY_PC]);
     await api.dev.runXex({
@@ -295,26 +371,188 @@ async function main() {
 
     await api.media.mountDisk(diskData, { name: path.basename(options.diskPath), slot: 0 });
     await api.debug.setBreakpoints([]);
+    if (runtime.app && typeof runtime.app.setMemoryWriteHook === "function") {
+      runtime.app.setMemoryWriteHook(function (
+        addr,
+        value,
+        cycleCounter,
+        instructionCounter,
+        pc,
+        opcode,
+        ctx
+      ) {
+        if (!fontWatchArmed) return;
+        if (
+          addr < ADDR_FONT_CUR_INDEX_TABLE ||
+          addr > (ADDR_FONT_CARD_DATA_PNTR + 1) ||
+          !ctx ||
+          !ctx.ram
+        ) {
+          return;
+        }
+        const curIndexTable =
+          (ctx.ram[ADDR_FONT_CUR_INDEX_TABLE] & 0xff) |
+          ((ctx.ram[ADDR_FONT_CUR_INDEX_TABLE + 1] & 0xff) << 8);
+        const cardDataPntr =
+          (ctx.ram[ADDR_FONT_CARD_DATA_PNTR] & 0xff) |
+          ((ctx.ram[ADDR_FONT_CARD_DATA_PNTR + 1] & 0xff) << 8);
+        const pointerName =
+          addr <= (ADDR_FONT_CUR_INDEX_TABLE + 1)
+            ? "curIndexTable"
+            : "cardDataPntr";
+        const pointerValue =
+          pointerName === "curIndexTable" ? curIndexTable : cardDataPntr;
+        if (pointerValue !== 0) return;
+        const pcBytes = [];
+        const startPc = pc & 0xffff;
+        for (let i = 0; i < 8; i++) {
+          pcBytes.push(ctx.ram[(startPc + i) & 0xffff] & 0xff);
+        }
+        fontWriteEvents.push({
+          addr: addr & 0xffff,
+          value: value & 0xff,
+          cycles: cycleCounter >>> 0,
+          instructions: instructionCounter >>> 0,
+          pc: pc >>> 0,
+          opcode: opcode >>> 0,
+          a: ctx.cpu ? ctx.cpu.a & 0xff : 0,
+          x: ctx.cpu ? ctx.cpu.x & 0xff : 0,
+          y: ctx.cpu ? ctx.cpu.y & 0xff : 0,
+          sp: ctx.cpu ? ctx.cpu.sp & 0xff : 0,
+          p: ctx.cpu ? (ctx.cpu.ps | 0x20) & 0xff : 0,
+          pcBytes: pcBytes,
+          pointerName: pointerName,
+          pointerValue: pointerValue >>> 0,
+        });
+      });
+    }
     await api.system.start();
+    await api.debug.setBreakpoints([ADDR_USE_SYSTEM_FONT, ADDR_LOAD_CHAR_SET, ADDR_INIT_RAM]);
 
     let status = 0;
     let chunks = 0;
     let decisive = false;
+    let fontWatchHit = null;
+    let seenSystemFontLoad = false;
+    let seenUseSystemFont = false;
     for (; chunks < options.maxChunks; chunks++) {
       await api.system.waitForCycles({ count: options.pollChunk });
       status = await api.debug.readMemory(ADDR_STATUS);
+      const fontState = await readFontPointers(api);
+      if (
+        !fontWatchArmed &&
+        (fontState.curIndexTable !== 0 || fontState.cardDataPntr !== 0)
+      ) {
+        fontWatchArmed = true;
+        console.log(
+          "Font watch armed: " + formatFontPointers(fontState)
+        );
+      }
+      const debugNow = await api.debug.getDebugState();
+      if (fontWriteEvents.length) {
+        const event = fontWriteEvents.shift();
+        fontWatchHit = {
+          kind: "FontZero",
+          chunk: chunks + 1,
+          status: status,
+          fontState: fontState,
+          write: event,
+          traceTail: await api.debug.getTraceTail(128),
+        };
+        decisive = true;
+        break;
+      }
+      if (debugNow && debugNow.breakpointHit >= 0) {
+        if (debugNow.breakpointHit === ADDR_USE_SYSTEM_FONT) {
+          if (!seenUseSystemFont && (fontWatchArmed || status >= 0x70)) {
+            seenUseSystemFont = true;
+            console.log(
+              "UseSystemFont hit: status=" + statusLabel(status) +
+              " ($" + hex2(status) + ")"
+            );
+          }
+          await api.system.start();
+          continue;
+        }
+        if (debugNow.breakpointHit === ADDR_LOAD_CHAR_SET) {
+          const r0addr = await readWord(api, 0x02 + GEOS_ZP_OFFSET);
+          const sourceBytes = await readBytes(api, r0addr, 16);
+          const isSystemFontLoad =
+            r0addr === 0xd800 &&
+            sourceBytes[0] === 0x06 &&
+            sourceBytes[1] === 0x3c &&
+            sourceBytes[2] === 0x00 &&
+            sourceBytes[3] === 0x09;
+          if (isSystemFontLoad && !seenSystemFontLoad) {
+            seenSystemFontLoad = true;
+            await api.system.start();
+            continue;
+          }
+          fontWatchHit = {
+            kind: "LoadCharSet",
+            chunk: chunks + 1,
+            status: status,
+            pc: debugNow.pc,
+            r0addr: r0addr,
+            sourceBytes: sourceBytes,
+            traceTail: await api.debug.getTraceTail(64),
+          };
+          console.log(
+            "LoadCharSet hit: status=" + statusLabel(status) +
+            " ($" + hex2(status) + ") r0=$" + hex4(r0addr) +
+            " bytes=" + sourceBytes.map(hex2).join(" ")
+          );
+          decisive = true;
+          break;
+        }
+        if (debugNow.breakpointHit === ADDR_INIT_RAM) {
+          const tableAddr = await readWord(api, 0x02 + GEOS_ZP_OFFSET);
+          const tableBytes = await readBytes(api, tableAddr, 256);
+          console.log(
+            "InitRam hit: status=" + statusLabel(status) +
+            " ($" + hex2(status) + ") table=$" + hex4(tableAddr) +
+            (initRamTouchesFontPointers(tableBytes) ? " [touches font pointers]" : "")
+          );
+          const initRamEntries = formatInitRamEntries(tableBytes);
+          if (initRamEntries.length) {
+            console.log("InitRam entries:");
+            initRamEntries.forEach(function (entry, index) {
+              console.log("  [" + index + "] " + entry);
+            });
+          }
+          await api.system.start();
+          continue;
+        }
+      }
+      if (
+        fontWatchArmed &&
+        (fontState.curIndexTable === 0 || fontState.cardDataPntr === 0)
+      ) {
+        fontWatchHit = {
+          kind: "FontZero",
+          chunk: chunks + 1,
+          status: status,
+          fontState: fontState,
+          traceTail: await api.debug.getTraceTail(128),
+        };
+        decisive = true;
+        break;
+      }
       process.stdout.write(
         "  chunk " + (chunks + 1) + "/" + options.maxChunks +
         "  status=" + statusLabel(status) +
         " ($" + hex2(status) + ")\r"
       );
       if (
-        status === 0x80 ||
-        status === 0xe1 ||
-        status === 0xe2 ||
-        status === 0xe3 ||
-        status === 0xe4 ||
-        status === 0xe5
+        !fontWatchArmed &&
+        (
+          status === 0x80 ||
+          status === 0xe1 ||
+          status === 0xe2 ||
+          status === 0xe3 ||
+          status === 0xe4 ||
+          status === 0xe5
+        )
       ) {
         decisive = true;
         break;
@@ -326,8 +564,36 @@ async function main() {
     }
     process.stdout.write("\n");
 
-    if (decisive && options.postCycles > 0) {
-      await api.system.waitForCycles({ count: options.postCycles });
+    if (!fontWatchHit && decisive && options.postCycles > 0) {
+      let remaining = options.postCycles | 0;
+      while (remaining > 0) {
+        const step = Math.min(remaining, FONT_WATCH_POLL_CHUNK);
+        await api.system.waitForCycles({ count: step });
+        remaining -= step;
+        const fontState = await readFontPointers(api);
+        if (
+          fontWatchArmed &&
+          (fontState.curIndexTable === 0 || fontState.cardDataPntr === 0)
+        ) {
+          fontWatchHit = {
+            kind: "FontZero",
+            chunk: chunks + 1,
+            status: await api.debug.readMemory(ADDR_STATUS),
+            fontState: fontState,
+            traceTail: await api.debug.getTraceTail(128),
+          };
+          break;
+        }
+        if (
+          !fontWatchArmed &&
+          (fontState.curIndexTable !== 0 || fontState.cardDataPntr !== 0)
+        ) {
+          fontWatchArmed = true;
+          console.log(
+            "Font watch armed: " + formatFontPointers(fontState)
+          );
+        }
+      }
     }
 
     await api.system.pause();
@@ -377,11 +643,33 @@ async function main() {
     const dlist = await readWord(api, ADDR_ANTIC_DLISTL);
     const sdmctl = await api.debug.readMemory(ADDR_OS_SDMCTL);
     const sdlst = await readWord(api, ADDR_OS_SDLSTL);
+    const nmiEnableMask = await api.debug.readMemory(ADDR_NMI_ENABLE_MASK);
+    const nmien = await api.debug.readMemory(ADDR_NMIEN);
+    const a914bytes = await readBytes(api, ADDR_A914, 8);
+    const a000bytes = await readBytes(api, ADDR_A000, 16);
+    const appMainRawBytes = await readBytes(api, ADDR_APPMAIN_RAW, 4);
+    // GEOS zero-page font pointers and BitmapUp state
+    const r0L = await api.debug.readMemory(0x02 + GEOS_ZP_OFFSET);
+    const r0H = await api.debug.readMemory(0x03 + GEOS_ZP_OFFSET);
+    const r3L = await api.debug.readMemory(0x08 + GEOS_ZP_OFFSET);
+    const r3H = await api.debug.readMemory(0x09 + GEOS_ZP_OFFSET);
+    const r9H = await api.debug.readMemory(0x15 + GEOS_ZP_OFFSET);
+    const r14L = await api.debug.readMemory(0x1e + GEOS_ZP_OFFSET);
+    const r14H = await api.debug.readMemory(0x1f + GEOS_ZP_OFFSET);
+    const r0addr = (r0H << 8) | r0L;
+    const r14addr = (r14H << 8) | r14L;
+    const r0bytes = await readBytes(api, r0addr, 16);
+    const r14bytes = await readBytes(api, r14addr, 4);
+    // BSWFont lives at KERNAL_HI $D800 — read its first 8 header bytes
+    const bswfontHdr = await readBytes(api, 0xd800, 8);
     const colbk = await api.debug.readMemory(ADDR_GTIA_COLBK);
     const colpf0 = await api.debug.readMemory(ADDR_GTIA_COLPF0);
     const colpf1 = await api.debug.readMemory(ADDR_GTIA_COLPF1);
     const colpf2 = await api.debug.readMemory(ADDR_GTIA_COLPF2);
     const colpf3 = await api.debug.readMemory(ADDR_GTIA_COLPF3);
+    const finalFontState = await readFontPointers(api);
+    const recentTraceTail = await api.debug.getTraceTail(128);
+    const fontTraceTail = fontWatchHit ? recentTraceTail : [];
 
     console.log("");
     console.log("=== Phase 5 Desktop Bootstrap Status ===");
@@ -428,6 +716,14 @@ async function main() {
     console.log("GEOS header [40..57]: " + geosHdr64.map(hex2).join(" "));
     console.log("GEOS start bytes: " + startBytes.map(hex2).join(" "));
     console.log("GEOS vec bytes:   " + vecBytes.map(hex2).join(" "));
+    console.log("nmiEnableMask=$" + hex2(nmiEnableMask) + " NMIEN=$" + hex2(nmien) + " @A914: " + a914bytes.map(hex2).join(" "));
+    console.log("@A000 (KERNAL_MID/DESK_TOP?): " + a000bytes.map(hex2).join(" "));
+    console.log("appMain raw bytes @$849B: " + appMainRawBytes.map(hex2).join(" ") + " (word=$" + hex4((appMainRawBytes[1] << 8) | appMainRawBytes[0]) + ")");
+    console.log("BitmapUp: r0=$" + hex4(r0addr) + " r3L=$" + hex2(r3L) + " r3H=$" + hex2(r3H) + " r9H=$" + hex2(r9H) + " r14=$" + hex4(r14addr));
+    console.log("r0 data: " + r0bytes.map(hex2).join(" "));
+    console.log("r14 vec: " + r14bytes.map(hex2).join(" "));
+    console.log("Font: " + formatFontPointers(finalFontState));
+    console.log("BSWFont hdr @$D800: " + bswfontHdr.map(hex2).join(" ") + " (expected 06 3C 00 09 08 00 CC 00)");
     console.log("Display regs: DMACTL=$" + hex2(dmactl) +
       " DLIST=$" + hex4(dlist) +
       " SDMCTL=$" + hex2(sdmctl) +
@@ -439,6 +735,162 @@ async function main() {
       " PF2=$" + hex2(colpf2) +
       " PF3=$" + hex2(colpf3));
     console.log("Stack $01F0-$01FF: " + stackTop.map(hex2).join(" "));
+    if (!fontWatchHit && recentTraceTail.length) {
+      console.log("Recent trace:");
+      recentTraceTail.forEach(function (entry, index) {
+        console.log(
+          "  [" + index + "] PC=$" + hex4(entry.pc) +
+          " A=$" + hex2(entry.a) +
+          " X=$" + hex2(entry.x) +
+          " Y=$" + hex2(entry.y) +
+          " SP=$" + hex2(entry.sp) +
+          " P=$" + hex2(entry.p) +
+          " CYC=" + entry.cycles
+        );
+      });
+    }
+    if (fontWatchHit) {
+      console.log("");
+      console.log(
+        "FONT WATCH HIT: chunk " + fontWatchHit.chunk +
+        " status=" + statusLabel(fontWatchHit.status) +
+        " ($" + hex2(fontWatchHit.status) + ") " +
+        formatFontPointers(fontWatchHit.fontState)
+      );
+      if (debugState) {
+        console.log(
+          "Watch PC=$" + hex4(debugState.pc) +
+          " A=$" + hex2(debugState.a) +
+          " X=$" + hex2(debugState.x) +
+          " Y=$" + hex2(debugState.y) +
+          " SP=$" + hex2(debugState.sp)
+        );
+      }
+      if (fontTraceTail.length) {
+        console.log("Recent trace:");
+        fontTraceTail.forEach(function (entry, index) {
+          console.log(
+            "  [" + index + "] PC=$" + hex4(entry.pc) +
+            " A=$" + hex2(entry.a) +
+            " X=$" + hex2(entry.x) +
+            " Y=$" + hex2(entry.y) +
+            " SP=$" + hex2(entry.sp) +
+            " P=$" + hex2(entry.p) +
+            " CYC=" + entry.cycles
+          );
+        });
+      }
+    }
+    if (fontWatchHit && fontWatchHit.kind === "FontZero" && fontWatchHit.write) {
+      console.log("");
+      console.log(
+        "FONT ZERO WRITE: chunk " + fontWatchHit.chunk +
+        " status=" + statusLabel(fontWatchHit.status) +
+        " ($" + hex2(fontWatchHit.status) + ") " +
+        formatFontPointers(fontWatchHit.fontState)
+      );
+      console.log(
+        "  $" + hex4(fontWatchHit.write.addr) +
+        " <- $" + hex2(fontWatchHit.write.value) +
+        " pointer=" + fontWatchHit.write.pointerName +
+        " value=$" + hex4(fontWatchHit.write.pointerValue) +
+        " cycles=" + fontWatchHit.write.cycles +
+        " instr=" + fontWatchHit.write.instructions +
+        " PC=$" + hex4(fontWatchHit.write.pc) +
+        " opcode=$" + hex2(fontWatchHit.write.opcode)
+      );
+      console.log(
+        "  CPU A=$" + hex2(fontWatchHit.write.a) +
+        " X=$" + hex2(fontWatchHit.write.x) +
+        " Y=$" + hex2(fontWatchHit.write.y) +
+        " SP=$" + hex2(fontWatchHit.write.sp) +
+        " P=$" + hex2(fontWatchHit.write.p) +
+        " bytes=" + fontWatchHit.write.pcBytes.map(hex2).join(" ")
+      );
+      if (debugState) {
+        console.log(
+          "Watch PC=$" + hex4(debugState.pc) +
+          " A=$" + hex2(debugState.a) +
+          " X=$" + hex2(debugState.x) +
+          " Y=$" + hex2(debugState.y) +
+          " SP=$" + hex2(debugState.sp)
+        );
+      }
+      if (fontWatchHit.traceTail && fontWatchHit.traceTail.length) {
+        console.log("Recent trace:");
+        fontWatchHit.traceTail.forEach(function (entry, index) {
+          console.log(
+            "  [" + index + "] PC=$" + hex4(entry.pc) +
+            " A=$" + hex2(entry.a) +
+            " X=$" + hex2(entry.x) +
+            " Y=$" + hex2(entry.y) +
+            " SP=$" + hex2(entry.sp) +
+            " P=$" + hex2(entry.p) +
+            " CYC=" + entry.cycles
+          );
+        });
+      }
+    }
+    if (fontWatchHit && fontWatchHit.pc) {
+      console.log("");
+      console.log(
+        fontWatchHit.kind + " trap: chunk " + fontWatchHit.chunk +
+        " status=" + statusLabel(fontWatchHit.status) +
+        " ($" + hex2(fontWatchHit.status) + ") PC=$" + hex4(fontWatchHit.pc) +
+        " r0=$" + hex4(fontWatchHit.r0addr) +
+        " bytes=" + fontWatchHit.sourceBytes.map(hex2).join(" ")
+      );
+      if (fontWatchHit.kind === "InitRam") {
+        const initRamEntries = formatInitRamEntries(fontWatchHit.sourceBytes);
+        if (initRamEntries.length) {
+          console.log("InitRam entries:");
+          initRamEntries.forEach(function (entry, index) {
+            console.log("  [" + index + "] " + entry);
+          });
+        }
+      }
+      if (fontWatchHit.traceTail && fontWatchHit.traceTail.length) {
+        console.log("Recent trace:");
+        fontWatchHit.traceTail.forEach(function (entry, index) {
+          console.log(
+            "  [" + index + "] PC=$" + hex4(entry.pc) +
+            " A=$" + hex2(entry.a) +
+            " X=$" + hex2(entry.x) +
+            " Y=$" + hex2(entry.y) +
+            " SP=$" + hex2(entry.sp) +
+            " P=$" + hex2(entry.p) +
+            " CYC=" + entry.cycles
+          );
+        });
+      }
+    }
+    if (
+      fontWatchHit &&
+      fontWatchHit.kind !== "FontZero" &&
+      !fontWatchHit.pc &&
+      fontWatchHit.traceTail &&
+      fontWatchHit.traceTail.length
+    ) {
+      console.log("");
+      console.log(
+        "FONT ZERO: chunk " + fontWatchHit.chunk +
+        " status=" + statusLabel(fontWatchHit.status) +
+        " ($" + hex2(fontWatchHit.status) + ") " +
+        formatFontPointers(fontWatchHit.fontState)
+      );
+      console.log("Recent trace:");
+      fontWatchHit.traceTail.forEach(function (entry, index) {
+        console.log(
+          "  [" + index + "] PC=$" + hex4(entry.pc) +
+          " A=$" + hex2(entry.a) +
+          " X=$" + hex2(entry.x) +
+          " Y=$" + hex2(entry.y) +
+          " SP=$" + hex2(entry.sp) +
+          " P=$" + hex2(entry.p) +
+          " CYC=" + entry.cycles
+        );
+      });
+    }
     console.log("");
 
     if (options.screenshotPath) {
@@ -472,6 +924,10 @@ async function main() {
     }
     if (status === 0x80) {
       console.log("Bootstrap reached desktop handoff status.");
+    }
+    if (fontWatchHit) {
+      console.log("Font pointer zeroed during desktop handoff; inspect trace above.");
+      process.exit(1);
     }
     process.exit(0);
   } finally {

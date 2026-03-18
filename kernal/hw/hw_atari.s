@@ -12,6 +12,7 @@
 
 .global InitAtariDisplay
 .global InitAtariPM
+.global AtariColorTable
 .global AtariRowBaseLo
 .global AtariRowBaseHi
 .global AtariBackRowBaseLo

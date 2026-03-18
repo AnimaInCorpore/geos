@@ -4,7 +4,11 @@
 .include "config.inc"
 
 ;addresses defined so-so
-.ifdef bsw128
+.if .defined(atarixl)
+Z45             =       $8698
+Z46             =       $8699
+Z47             =       $869a
+.elseif .defined(bsw128)
 Z45             =       $46
 Z46             =       $47
 Z47             =       $48

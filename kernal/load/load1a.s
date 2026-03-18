@@ -219,7 +219,9 @@ _StartAppl:
 	jsr _InitMachine
 .endif
 	jsr _UseSystemFont
+.ifdef atarixl
 	jsr UNK_4
+.endif
 .ifdef atarixl_desktop_smoketest
 	LoadB PHASE5_STATUS, $80
 .endif
