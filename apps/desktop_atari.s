@@ -33,6 +33,7 @@ NMIEN = $D40E
 ; ---------------------------------------------------------------
 GS_UseSystemFont = $C14B   ; entry 25
 GS_ClrScr        = $C620
+GS_DoIcons       = $C15A
 GS_i_FillRam     = $C1B4   ; entry 60
 
 ; ---------------------------------------------------------------
@@ -59,21 +60,24 @@ PAT_WHITE = $00
 PAT_BACK  = $55   ; 50% checkerboard (standard GEOS desktop background)
 PAT_BLACK = $FF
 
+.segment "CODE"
+
 .ifdef atarixl_desktop_smoketest
 PHASE5_STATUS = $04d0
 PHASE5_STATUS_DESKTOP_VISIBLE = $82
 .endif
 
-.segment "CODE"
-
 ; ---------------------------------------------------------------
 ; Entry point – called by KERNAL _MNLP every main-loop iteration.
-; Paint once, then return so the frame remains stable on screen.
+; Paint once, then return so the desktop can keep running.
 ; ---------------------------------------------------------------
 DesktopStart:
         sei
         cld
-        jsr GS_ClrScr
+        lda #$00
+        sta NMIEN
+        lda #(ST_WR_FORE | ST_WR_BACK)
+        sta dispBufferOn
 
         ; --- Menu bar (rows 0-15): white ---
         lda #<SCREEN_BASE
@@ -113,77 +117,11 @@ DesktopStart:
         LoadB PHASE5_STATUS, $81
 .endif
 
-        ; --- Icon blocks: same desktop smoke-frame layout, painted once ---
-        lda #<ICON1_FRONT
+        lda #<DesktopIcons
         sta r0
-        lda #>ICON1_FRONT
+        lda #>DesktopIcons
         sta r0+1
-        lda #<($6000 + (48 * SC_BYTE_WIDTH) + 4)
-        sta r1
-        lda #>($6000 + (48 * SC_BYTE_WIDTH) + 4)
-        sta r1+1
-        ldx #ICON_HEIGHT
-@icon1Rows:
-        ldy #ICON_WIDTH - 1
-@icon1Cols:
-        lda #$f0
-        sta (r0),y
-        sta (r1),y
-        dey
-        bpl @icon1Cols
-        clc
-        lda r0
-        adc #SC_BYTE_WIDTH
-        sta r0
-        bcc :+
-        inc r0+1
-:       
-        clc
-        lda r1
-        adc #SC_BYTE_WIDTH
-        sta r1
-        bcc :+
-        inc r1+1
-:       
-        dex
-        bne @icon1Rows
-.ifdef atarixl_desktop_smoketest
-        LoadB PHASE5_STATUS, $82
-.endif
-
-        lda #<ICON2_FRONT
-        sta r0
-        lda #>ICON2_FRONT
-        sta r0+1
-        lda #<($6000 + (48 * SC_BYTE_WIDTH) + 20)
-        sta r1
-        lda #>($6000 + (48 * SC_BYTE_WIDTH) + 20)
-        sta r1+1
-        ldx #ICON_HEIGHT
-@icon2Rows:
-        ldy #ICON_WIDTH - 1
-@icon2Cols:
-        lda #$0f
-        sta (r0),y
-        sta (r1),y
-        dey
-        bpl @icon2Cols
-        clc
-        lda r0
-        adc #SC_BYTE_WIDTH
-        sta r0
-        bcc :+
-        inc r0+1
-:       
-        clc
-        lda r1
-        adc #SC_BYTE_WIDTH
-        sta r1
-        bcc :+
-        inc r1+1
-:       
-        dex
-        bne @icon2Rows
+        jsr GS_DoIcons
 .ifdef atarixl_desktop_smoketest
         LoadB PHASE5_STATUS, $83
 .endif
@@ -222,16 +160,50 @@ DesktopStart:
 :       dex
         bne @bottomRows
 .ifdef atarixl_desktop_smoketest
-        LoadB PHASE5_STATUS, $84
-.endif
-
-.ifdef atarixl_desktop_smoketest
         LoadB PHASE5_STATUS, PHASE5_STATUS_DESKTOP_VISIBLE
 .endif
-        jmp DesktopHold
+        lda #$40
+        sta NMIEN
+        cli
+        rts
 
-DesktopHold:
-.ifdef atarixl_desktop_smoketest
-        LoadB PHASE5_STATUS, PHASE5_STATUS_DESKTOP_VISIBLE
-.endif
-        jmp DesktopHold
+DesktopIconNoop:
+        rts
+
+DesktopIcons:
+        .byte 2
+        .word 0
+        .byte 0
+        .word DesktopDiskPic
+        .byte 4, 48, 6, 16
+        .word DesktopIconNoop
+        .word DesktopOpenPic
+        .byte 20, 48, 6, 16
+        .word DesktopIconNoop
+
+DesktopDiskPic:
+        .byte 5, %11111111, $80+1, %11111110, $db+8, 2, $80+6
+        .byte %10000000, %00000000, %00000000, %00000000, %00000000, %00000011, $80+12
+        .byte %10000000, %00000001, %11001100, %01111100, %00000000, %00000011
+        .byte %10000000, %00000001, %11001100, %11000110, %00000000, %00000011, $db+8, 2, $80+6
+        .byte %10000000, %00000001, %11101100, %11000110, %00000000, %00000011, $db+8, 2, $80+6
+        .byte %10000000, %00000001, %10111100, %11000110, %00000000, %00000011, $db+8, 2, $80+6
+        .byte %10000000, %00000001, %10011100, %11000110, %00000000, %00000011, $80+6
+        .byte %10000000, %00000001, %10001100, %01111100, %00000000, %00000011, $db+8, 2, $80+6
+        .byte %10000000, %00000000, %00000000, %00000000, %00000000, %00000011
+        .byte 6, %11111111, $80+1, %01111111, 5, %11111111
+
+DesktopOpenPic:
+        .byte 5, %11111111, $80+1, %11111110, $db+8, 2, $80+6
+        .byte %10000000, %00000000, %00000000, %00000000, %00000000, %00000011, $80+(9*6)
+        .byte %10000000, %00111110, %00000000, %00000000, %00000000, %00000011
+        .byte %10000000, %01100011, %00000000, %00000000, %00000000, %00000011
+        .byte %10000000, %01100011, %01111100, %01111001, %11110000, %00000011
+        .byte %10000000, %01100011, %01100110, %11001101, %11011000, %00000011
+        .byte %10000000, %01100011, %01100110, %11001101, %10011000, %00000011
+        .byte %10000000, %01100011, %01100110, %11111101, %10011000, %00000011
+        .byte %10000000, %01100011, %01100110, %11000001, %10011000, %00000011
+        .byte %10000000, %01100011, %01100110, %11001101, %10011000, %00000011
+        .byte %10000000, %00111110, %01111100, %01111001, %10011000, %00000011, $db+8, 2, $80+6
+        .byte %10000000, %00000000, %01100000, %00000000, %00000000, %00000011
+        .byte 6, %11111111, $80+1, %01111111, 5, %11111111
