@@ -680,9 +680,9 @@ $(BUILD_DIR)/siov_bridge_diag.xex: $(BUILD_DIR)/siov_bridge_diag.bin
 
 # Atari-native minimal GEOS desktop application (replaces C64 DESK TOP binary).
 # Loads at APP_RAM ($0400), uses only KERNAL jumptable calls.
-$(BUILD_DIR)/desktop_atari.bin: apps/desktop_atari.s apps/desktop_atari.cfg
+$(BUILD_DIR)/desktop_atari.bin: apps/desktop_atari.s apps/desktop_atari.cfg $(BUILD_FLAGS_FILE)
 	@mkdir -p $(dir $@)
-	$(AS) -I inc apps/desktop_atari.s -o $(BUILD_DIR)/desktop_atari.o
+	$(AS) -D $(VARIANT)=1 -D $(DRIVE)=1 -D $(INPUT)=1 $(ASFLAGS) apps/desktop_atari.s -o $(BUILD_DIR)/desktop_atari.o
 	$(LD) -C apps/desktop_atari.cfg $(BUILD_DIR)/desktop_atari.o \
 	      -o $@ -m $(BUILD_DIR)/desktop_atari.map
 
