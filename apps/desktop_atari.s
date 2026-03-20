@@ -69,9 +69,15 @@ PHASE5_STATUS_DESKTOP_VISIBLE = $82
 
 ; ---------------------------------------------------------------
 ; Entry point – called by KERNAL _MNLP every main-loop iteration.
-; Paint once, then return so the desktop can keep running.
+; Paint once on first call, then return immediately on subsequent
+; calls so the desktop keeps running without erasing its own output.
 ; ---------------------------------------------------------------
 DesktopStart:
+        lda painted
+        beq @doPaint
+        rts                     ; already painted — just return
+@doPaint:
+        inc painted             ; mark as painted before we begin
         sei
         cld
         lda #$00
@@ -113,6 +119,35 @@ DesktopStart:
 :       
         dex
         bne @menuRows
+        ; --- Desktop background (rows 16-183): clear to zero ---
+        ; r0 already points to SCREEN_BASE + MENU_ROWS * 40,
+        ; r1 to BACK_SCR_BASE + MENU_ROWS * 40 after menu loop.
+        ldx #DESKTOP_BG_ROWS
+@bgRows:
+        ldy #SC_BYTE_WIDTH - 1
+@bgCols:
+        lda #$00
+        sta (r0),y
+        sta (r1),y
+        dey
+        bpl @bgCols
+        clc
+        lda r0
+        adc #SC_BYTE_WIDTH
+        sta r0
+        bcc :+
+        inc r0+1
+:
+        clc
+        lda r1
+        adc #SC_BYTE_WIDTH
+        sta r1
+        bcc :+
+        inc r1+1
+:
+        dex
+        bne @bgRows
+
 .ifdef atarixl_desktop_smoketest
         LoadB PHASE5_STATUS, $81
 .endif
@@ -207,3 +242,6 @@ DesktopOpenPic:
         .byte %10000000, %00111110, %01111100, %01111001, %10011000, %00000011, $db+8, 2, $80+6
         .byte %10000000, %00000000, %01100000, %00000000, %00000000, %00000011
         .byte 6, %11111111, $80+1, %01111111, 5, %11111111
+
+.segment "BSS"
+painted:        .res 1

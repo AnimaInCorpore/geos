@@ -35,9 +35,6 @@
 .segment "irq_atari"
 
 ATARI_DMACTL_ACTIVE = $3E
-SDMCTL = $022F
-SDLSTL = $0230
-SDLSTH = $0231
 
 InitAtariIRQ:
 	lda #0
@@ -268,16 +265,21 @@ MaintainAtariDisplay:
 	lda #ATARI_DMACTL_ACTIVE
 	sta DMACTL
 	sta SDMCTL
-	; Restore GTIA color registers: DESK TOP's C64 VIC init writes to $D016-$D01A
-	; which map to Atari COLPF0-COLBK, corrupting the display palette every frame.
+	; Restore GTIA color registers and their OS shadow counterparts so the
+	; Atari OS deferred VBI does not clobber them back to zero.
 	lda AtariColorTable+0
 	sta COLBK
+	sta COLOR4
 	lda AtariColorTable+1
 	sta COLPF0
+	sta COLOR0
 	lda AtariColorTable+2
 	sta COLPF1
+	sta COLOR1
 	lda AtariColorTable+3
 	sta COLPF2
+	sta COLOR2
 	lda AtariColorTable+4
 	sta COLPF3
+	sta COLOR3
 	rts

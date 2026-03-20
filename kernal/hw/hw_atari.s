@@ -48,14 +48,19 @@ ClearAtariBitmap:
 InitAtariColors:
 	lda AtariColorTable+0
 	sta COLBK
+	sta COLOR4
 	lda AtariColorTable+1
 	sta COLPF0
+	sta COLOR0
 	lda AtariColorTable+2
 	sta COLPF1
+	sta COLOR1
 	lda AtariColorTable+3
 	sta COLPF2
+	sta COLOR2
 	lda AtariColorTable+4
 	sta COLPF3
+	sta COLOR3
 	rts
 
 InitAtariPM:
