@@ -105,6 +105,7 @@ async function main() {
     turbo: true,
     sioTurbo: false,
     frameDelayMs: 0,
+    skipRendering: false,
   });
 
   try {

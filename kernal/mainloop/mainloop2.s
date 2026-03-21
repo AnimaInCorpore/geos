@@ -15,7 +15,6 @@
 
 .import _MainLoop
 .ifdef atarixl
-.import atari_dlist
 .endif
 
 .global _MainLoop2
@@ -26,12 +25,11 @@
 _MainLoop2:
 	START_IO_X
 .ifdef atarixl
-	lda #<atari_dlist
-	sta DLISTL
-	sta $0230
-	lda #>atari_dlist
-	sta DLISTH
-	sta $0231
+	; Only refresh DMACTL — do NOT write DLISTL/DLISTH here.
+	; Writing DLISTL/DLISTH resets ANTIC's internal display list pointer,
+	; which when done mid-frame causes ANTIC to restart from the beginning
+	; of the display list, preventing playfield rendering.
+	; MaintainAtariDisplay (VBI handler) already maintains DLISTL/DLISTH.
 	lda #$3e
 	sta DMACTL
 	sta $022f
