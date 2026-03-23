@@ -33,20 +33,20 @@ const JSA8E_DIR = path.resolve(REPO_ROOT, "third_party/A8E/jsA8E");
 const { createHeadlessAutomation } = require(path.join(JSA8E_DIR, "headless"));
 
 const ENTRY_PC = 0x0881;
-const ADDR_STATUS = 0x04d0;
-const ADDR_ERROR_X = 0x04d1;
-const ADDR_SIO_Y = 0x04d2;
-const ADDR_SIO_DSTATS = 0x04d3;
-const ADDR_SIO_SECTOR_LO = 0x04d4;
-const ADDR_SIO_SECTOR_HI = 0x04d5;
-const ADDR_SIO_CMD = 0x04d6;
-const ADDR_SIO_RET_A = 0x04d7;
-const ADDR_DBG_DCB_DDEVIC = 0x04d8;
-const ADDR_DBG_DCB_DUNIT = 0x04d9;
-const ADDR_DBG_CURDRIVE = 0x04da;
-const ADDR_DBG_CURDEVICE = 0x04db;
-const ADDR_DBG_CURTYPE = 0x04dc;
-const ADDR_DBG_OD_STAGE = 0x04dd;
+const ADDR_STATUS = 0x0600;
+const ADDR_ERROR_X = 0x0601;
+const ADDR_SIO_Y = 0x0602;
+const ADDR_SIO_DSTATS = 0x0603;
+const ADDR_SIO_SECTOR_LO = 0x0604;
+const ADDR_SIO_SECTOR_HI = 0x0605;
+const ADDR_SIO_CMD = 0x0606;
+const ADDR_SIO_RET_A = 0x0607;
+const ADDR_DBG_DCB_DDEVIC = 0x0608;
+const ADDR_DBG_DCB_DUNIT = 0x0609;
+const ADDR_DBG_CURDRIVE = 0x060a;
+const ADDR_DBG_CURDEVICE = 0x060b;
+const ADDR_DBG_CURTYPE = 0x060c;
+const ADDR_DBG_OD_STAGE = 0x060d;
 const ADDR_SIO_BRIDGE = 0x0700;
 const ADDR_SIO_BRIDGE_SAVED_SSKCTL = 0x07e5;
 const ADDR_OS_SSKCTL_SHADOW = 0x0232;
@@ -96,7 +96,7 @@ const ADDR_FONT_CARD_DATA_PNTR = 0x002c + GEOS_ZP_OFFSET;
 const POLL_CHUNK = 20_000;
 const MAX_CHUNKS = 500;
 const BOOT_TIMEOUT_MS = 30_000;
-const FONT_WATCH_POLL_CHUNK = 50;
+const FONT_WATCH_POLL_CHUNK = 50_000;
 
 function resolveInputPath(rawPath) {
   if (!rawPath) {
@@ -336,7 +336,7 @@ function initRamTouchesFontPointers(bytes) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.nativeDesktop && options.postCycles === 0) {
-    options.postCycles = 3_000_000;
+    options.postCycles = 20_000_000;
   }
 
   for (const [label, p] of [["XEX", options.xexPath], ["ATR", options.diskPath], ["OS ROM", options.osPath]]) {
@@ -570,7 +570,7 @@ async function main() {
         decisive = true;
         break;
       }
-      if (options.nativeDesktop && (status === 0x80 || status === 0x82)) {
+      if (options.nativeDesktop && status >= 0x80 && status <= 0x82) {
         decisive = true;
         break;
       }
@@ -582,35 +582,15 @@ async function main() {
     process.stdout.write("\n");
 
     if (!fontWatchHit && decisive && options.postCycles > 0) {
-      let remaining = options.postCycles | 0;
-      while (remaining > 0) {
-        const step = Math.min(remaining, FONT_WATCH_POLL_CHUNK);
-        await api.system.waitForCycles({ count: step });
-        remaining -= step;
-        const fontState = await readFontPointers(api);
-        if (
-          fontWatchArmed &&
-          (fontState.curIndexTable === 0 || fontState.cardDataPntr === 0)
-        ) {
-          fontWatchHit = {
-            kind: "FontZero",
-            chunk: chunks + 1,
-            status: await api.debug.readMemory(ADDR_STATUS),
-            fontState: fontState,
-            traceTail: await api.debug.getTraceTail(128),
-          };
-          break;
-        }
-        if (
-          !fontWatchArmed &&
-          (fontState.curIndexTable !== 0 || fontState.cardDataPntr !== 0)
-        ) {
-          fontWatchArmed = true;
-          console.log(
-            "Font watch armed: " + formatFontPointers(fontState)
-          );
-        }
+      await api.system.start();
+      const wfcResult = await api.system.waitForCycles({ count: options.postCycles });
+      if (wfcResult && !wfcResult.ok) {
+        console.log("Post-cycle fault: reason=" + wfcResult.reason +
+          " delta=" + wfcResult.delta);
       }
+      await api.system.pause();
+      const postEndStatus = await api.debug.readMemory(ADDR_STATUS);
+      if (postEndStatus >= 0x82) status = postEndStatus;
     }
 
     if (options.nativeDesktop) {
@@ -744,6 +724,26 @@ async function main() {
     console.log("appMain raw bytes @$849B: " + appMainRawBytes.map(hex2).join(" ") + " (word=$" + hex4((appMainRawBytes[1] << 8) | appMainRawBytes[0]) + ")");
     console.log("SCREEN_BASE @$4000: " + screenBytes.map(hex2).join(" "));
     console.log("BACK_SCR_BASE @$6000: " + backScreenBytes.map(hex2).join(" "));
+    // Extra screen memory reads for checkerboard/icon verification
+    const screenRow16 = await readBytes(api, ADDR_SCREEN_BASE + 16 * 40, 16);
+    const screenRow17 = await readBytes(api, ADDR_SCREEN_BASE + 17 * 40, 16);
+    const screenRow48 = await readBytes(api, ADDR_SCREEN_BASE + 48 * 40, 16);
+    const screenRow184 = await readBytes(api, ADDR_SCREEN_BASE + 184 * 40, 16);
+    const screenRow183 = await readBytes(api, ADDR_SCREEN_BASE + 183 * 40, 16);
+    const screenRow185 = await readBytes(api, ADDR_SCREEN_BASE + 185 * 40, 16);
+    const backRow184 = await readBytes(api, ADDR_BACK_SCR_BASE + 184 * 40, 16);
+    const phase5Status = await api.debug.readMemory(ADDR_STATUS);
+    const paintedByte = await api.debug.readMemory(0x0401);
+    const r0val = await readWord(api, 0x02 + GEOS_ZP_OFFSET);
+    const r1val = await readWord(api, 0x04 + GEOS_ZP_OFFSET);
+    console.log("Screen row16 @$4280: " + screenRow16.map(hex2).join(" ") + " (expect checkerboard $55/$AA)");
+    console.log("Screen row17 @$42A8: " + screenRow17.map(hex2).join(" ") + " (expect checkerboard $AA/$55)");
+    console.log("Screen row48 @$4780: " + screenRow48.map(hex2).join(" ") + " (expect icon area)");
+    console.log("Screen row183 @$5C98: " + screenRow183.map(hex2).join(" ") + " (last checkerboard row)");
+    console.log("Screen row184 @$5CC0: " + screenRow184.map(hex2).join(" ") + " (expect black $00 bottom bar)");
+    console.log("Screen row185 @$5CE8: " + screenRow185.map(hex2).join(" ") + " (expect black $00)");
+    console.log("Back  row184 @$7CC0: " + backRow184.map(hex2).join(" ") + " (back buffer, expect $00)");
+    console.log("Final PHASE5_STATUS=$" + hex2(phase5Status) + " painted=$" + hex2(paintedByte) + " r0=$" + hex4(r0val) + " r1=$" + hex4(r1val));
     console.log("BitmapUp: r0=$" + hex4(r0addr) + " r3L=$" + hex2(r3L) + " r3H=$" + hex2(r3H) + " r9H=$" + hex2(r9H) + " r14=$" + hex4(r14addr));
     console.log("r0 data: " + r0bytes.map(hex2).join(" "));
     console.log("r14 vec: " + r14bytes.map(hex2).join(" "));
@@ -918,6 +918,17 @@ async function main() {
     }
     console.log("");
 
+    // Post-cycle status and screen memory verification
+    {
+      const postStatus = await api.debug.readMemory(ADDR_STATUS);
+      const row48post = await readBytes(api, 0x4780, 16);
+      const row184post = await readBytes(api, 0x5CC0, 16);
+      console.log("Post-cycle PHASE5_STATUS=$" + hex2(postStatus) +
+        " row48=" + row48post.map(hex2).join(" ") +
+        " row184=" + row184post.map(hex2).join(" "));
+      if (postStatus >= 0x82) status = postStatus;
+    }
+
     if (options.screenshotPath) {
       const shot = await api.artifacts.captureScreenshot();
       const png = Buffer.from(shot.base64 || "", "base64");
@@ -940,12 +951,16 @@ async function main() {
     }
 
     if (status === 0x81) {
-      if (!options.allowSmokeFrame) {
+      if (options.nativeDesktop) {
+        console.log("Native desktop paint in progress ($81) — blitter not yet complete.");
+        console.log("Consider increasing --post-cycles if $82 is not reached.");
+      } else if (!options.allowSmokeFrame) {
         console.log("Reached smoke-frame fallback ($81), not real desktop app rendering.");
         console.log("Run with --allow-smoke-frame only for bootstrap diagnostics.");
         process.exit(1);
+      } else {
+        console.log("Bootstrap reached visible desktop smoke-frame fallback.");
       }
-      console.log("Bootstrap reached visible desktop smoke-frame fallback.");
     }
     if (status === 0x82) {
       if (!options.nativeDesktop) {

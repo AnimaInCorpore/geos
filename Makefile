@@ -346,7 +346,7 @@ atarixl-desktop-bootstrap:
 			$(C1541) GEOS64/GEOS64.D64 -geosread "DESK TOP" build/atarixl/geos64_cvt/desk_top.cvt >/dev/null; \
 			$(C1541) GEOS64/GEOS64.D64 -geosread "CONFIGURE" build/atarixl/geos64_cvt/configure.cvt >/dev/null; \
 			$(C1541) GEOS64/GEOS64.D64 -geosread "JOYSTICK" build/atarixl/geos64_cvt/joystick.cvt >/dev/null; \
-			$(C1541) GEOS64/GEOS64.D64 -geosread "mps-803" build/atarixl/geos64_cvt/mps_803.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "MPS-803" build/atarixl/geos64_cvt/mps_803.cvt >/dev/null; \
 			PHASE5_CVT="build/atarixl/geos64_cvt/configure.cvt build/atarixl/geos64_cvt/desk_top.cvt build/atarixl/geos64_cvt/joystick.cvt build/atarixl/geos64_cvt/mps_803.cvt"; \
 		fi; \
 	fi; \
@@ -364,7 +364,7 @@ atarixl-desktop-smoke-bootstrap:
 			$(C1541) GEOS64/GEOS64.D64 -geosread "DESK TOP" build/atarixl/geos64_cvt/desk_top.cvt >/dev/null; \
 			$(C1541) GEOS64/GEOS64.D64 -geosread "CONFIGURE" build/atarixl/geos64_cvt/configure.cvt >/dev/null; \
 			$(C1541) GEOS64/GEOS64.D64 -geosread "JOYSTICK" build/atarixl/geos64_cvt/joystick.cvt >/dev/null; \
-			$(C1541) GEOS64/GEOS64.D64 -geosread "mps-803" build/atarixl/geos64_cvt/mps_803.cvt >/dev/null; \
+			$(C1541) GEOS64/GEOS64.D64 -geosread "MPS-803" build/atarixl/geos64_cvt/mps_803.cvt >/dev/null; \
 			PHASE5_CVT="build/atarixl/geos64_cvt/configure.cvt build/atarixl/geos64_cvt/desk_top.cvt build/atarixl/geos64_cvt/joystick.cvt build/atarixl/geos64_cvt/mps_803.cvt"; \
 		fi; \
 	fi; \

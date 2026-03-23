@@ -33,16 +33,18 @@ ClrScr:
 	LoadW r0, SCREEN_BASE
 	LoadW r1, BACK_SCR_BASE
 	ldx #SC_PIX_HEIGHT
+	lda #backPattern1
+	sta r2L
 @a1:	ldy #SC_BYTE_WIDTH - 1
-@a2:	lda #backPattern1
-	sta (r0),y
+	lda r2L
+@a2:	sta (r0),y
 	sta (r1),y
-	dey
-	lda #backPattern2
-	sta (r0),y
-	sta (r1),y
+	eor #$ff
 	dey
 	bpl @a2
+	lda r2L
+	eor #$ff
+	sta r2L
 	AddVW SC_BYTE_WIDTH, r0
 	AddVW SC_BYTE_WIDTH, r1
 	dex

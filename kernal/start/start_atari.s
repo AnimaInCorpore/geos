@@ -112,7 +112,7 @@ PHASE4_VARS_SIZE   = $0940
 .endif
 
 .ifdef atarixl_desktop_smoketest
-PHASE5_STATUS      = $04d0
+PHASE5_STATUS      = $0600
 PHASE5_STAGE_BASE  = $2000
 PHASE5_INPUT_SRC   = $7800
 PHASE5_INPUT_DST   = $fd00
