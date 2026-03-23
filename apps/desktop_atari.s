@@ -81,6 +81,10 @@ DesktopStart:
 @alreadyDone:
         rts
 @doPaint:
+.ifdef atarixl_desktop_smoketest
+        lda #$7F
+        sta PHASE5_STATUS
+.endif
         lda #$01
         sta DesktopStart+1      ; self-modify immediate operand
         sei

@@ -10,6 +10,7 @@ artifacts should stay outside the repository.
 - `Altirra-4.40-src/`: reference snapshot of the Altirra source tree. Keep only
   upstream source files here; generated `obj/`, `out/`, `lib/`, and similar local
   build output must remain untracked.
+- `geos/`: upstream GEOS repository available as a git submodule for easy updates.
 
 ## Local tools
 

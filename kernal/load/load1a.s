@@ -227,9 +227,6 @@ _StartAppl:
 .ifdef atarixl
 	MoveW fileHeader+O_GHST_VEC, appMain
 .endif
-.ifdef atarixl_desktop_smoketest
-	LoadB PHASE5_STATUS, $80
-.endif
 	ldx r7H
 	lda r7L
 .ifdef bsw128
