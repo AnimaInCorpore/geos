@@ -195,17 +195,26 @@ DesktopStart:
         LoadB PHASE5_STATUS, $81
 .endif
 
-        ; Blit icons directly (BitmapUp hangs on Atari emulation)
+        ; Blit icons directly (BlitIcon6x16 hangs on Atari emulation)
+        ; Manually blit icon to screen/back buffer
+        ldx #16
+        LoadW r0, SCREEN_BASE + (48 * SC_BYTE_WIDTH) + 4
+        LoadW r1, BACK_SCR_BASE + (48 * SC_BYTE_WIDTH) + 4
         LoadW r2, DiskIconRaw
-        lda #<ICON1_FRONT
-        sta r0
-        lda #>ICON1_FRONT
-        sta r0+1
-        lda #<(BACK_SCR_BASE + (48 * SC_BYTE_WIDTH) + 4)
-        sta r1
-        lda #>(BACK_SCR_BASE + (48 * SC_BYTE_WIDTH) + 4)
-        sta r1+1
-        jsr BlitIcon6x16
+        @blitLoop:
+        ldy #3
+        @blitCol:
+        lda (r2),y
+        sta (r0),y
+        sta (r1),y
+        dey
+        bpl @blitCol
+        AddVW SC_BYTE_WIDTH, r0
+        AddVW SC_BYTE_WIDTH, r1
+        AddVW 4, r2
+        dex
+        bne @blitLoop
+
 
         LoadW r2, OpenIconRaw
         lda #<ICON2_FRONT

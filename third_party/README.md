@@ -12,6 +12,7 @@ artifacts should stay outside the repository.
   build output must remain untracked.
 - `geos/`: upstream GEOS repository available as a git submodule for easy updates.
 - `desktop-disassembly/`: upstream desktop-disassembly repo with the disassembly of the GEOS desktop build.
+- `geos-desktop2.1-master/`: mirror of the GEOS desktop 2.1 build sources for analysis.
 
 ## Local tools
 
