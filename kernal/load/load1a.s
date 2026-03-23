@@ -10,11 +10,13 @@
 .include "kernal.inc"
 .include "diskdrv.inc"
 .include "c64.inc"
+.include "atari.inc"
 
 .import _MNLP
 .import UNK_4
 .import UNK_5
 .import DeskTopName
+.import atari_dlist
 .import _EnterDT_DB
 .import TempCurDrive
 .import _InitMachine
@@ -211,6 +213,17 @@ _StartAppl:
 	cld
 	ldx #$FF
 	txs
+.ifdef atarixl
+    ; Initialize Atari display before handoff using hardware regs
+    lda #$00
+    sta DMACTL
+    lda #<atari_dlist
+    sta DLISTL
+    lda #>atari_dlist
+    sta DLISTH
+    lda #$3E
+    sta DMACTL
+.endif
 	jsr UNK_5
 .ifdef wheels
 .import _FirstInit3
