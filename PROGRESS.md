@@ -37,7 +37,7 @@ Update rule: after each completed porting step, change exactly one matching chec
 - [x] 14. Write `drv/drv1050.s` using OS `jsr SIOV`
 - [x] 15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool
 - [x] 16. Audit and fix all `$FE`/`#254` sector-payload literals in `kernal/files/` (see section 6.7 in `PORTING.md`)
-- [ ] 17. Test: directory listing, file read, file write, disk full detection
+- [x] 17. Test: directory listing, file read, file write, disk full detection (Automated `jsA8E` matrix pass; manual Altirra sign-off pending)
 
 ## Phase 5: ROM-off desktop (floppy-first, no mandatory cartridge)
 
