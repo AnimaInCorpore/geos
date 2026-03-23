@@ -4,3 +4,6 @@
 [submodule "third_party/geos"]
 	path = third_party/geos
 	url = https://github.com/mist64/geos.git
+[submodule "third_party/desktop-disassembly"]
+	path = third_party/desktop-disassembly
+	url = https://github.com/geos64128/desktop-disassembly.git

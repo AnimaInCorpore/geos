@@ -11,6 +11,7 @@ artifacts should stay outside the repository.
   upstream source files here; generated `obj/`, `out/`, `lib/`, and similar local
   build output must remain untracked.
 - `geos/`: upstream GEOS repository available as a git submodule for easy updates.
+- `desktop-disassembly/`: upstream desktop-disassembly repo with the disassembly of the GEOS desktop build.
 
 ## Local tools
 
