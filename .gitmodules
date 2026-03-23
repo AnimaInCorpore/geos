@@ -1,3 +1,6 @@
 [submodule "third_party/A8E"]
 	path = third_party/A8E
 	url = https://github.com/AnimaInCorpore/A8E
+[submodule "third_party/geos"]
+	path = third_party/geos
+	url = https://github.com/mist64/geos.git
