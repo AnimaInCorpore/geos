@@ -708,3 +708,6 @@ $(BUILD_DIR)/kernal/relocator.bin: $(PREFIXED_RELOCATOR_OBJS) kernal/relocator_$
 # a must!
 love:	
 	@echo "Not war, eh?"
+DESKTOP_SRC = apps/desktop_atari.s
+native-disk: build/atarixl/desktop_atari.cvt
+	python3 tools/atari_geos_disk.py --disk-name GEOSXL build/atarixl/geos.atr build/atarixl/desktop_atari.cvt
