@@ -4,8 +4,9 @@ This document describes the work required to port the GEOS kernel from Commodore
 to the Atari 800 XL (64 KB RAM, floppy-first boot, Atari 810/1050 floppy drive, and
 an optional later cartridge boot phase).
 
-First-release target platform: **PAL Atari 800 XL**. NTSC support is a follow-up
-compatibility phase after the PAL baseline is stable.
+First-release target platform: **PAL Atari 800 XL**. Treat PAL as the only
+release gate for version 1. NTSC behavior is useful to keep architecturally possible,
+but it is a follow-up compatibility phase after the PAL baseline is stable.
 
 Both platforms share a 6502-family CPU, so pure arithmetic/logic code, most process
 scheduling code, and most file-format logic are directly reusable. The graphics stack
@@ -20,7 +21,7 @@ interrupts, and memory mapping.
 
 | Feature        | C64                           | Atari 800 XL                       |
 |----------------|-------------------------------|-------------------------------------|
-| CPU            | 6510 @ ~1 MHz (PAL ~0.985 MHz)| 6502C (SALLY) @ ~1.77 MHz (PAL); ~1.79 MHz NTSC |
+| CPU            | 6510 @ ~1 MHz (PAL ~0.985 MHz)| 6502C (SALLY) @ ~1.773 MHz (PAL first target); ~1.790 MHz NTSC later |
 | CPU I/O port   | $00/$01 (memory banking)      | Not present (normal RAM at $00/$01) |
 | Video          | VIC-II ($D000–$D02F)          | ANTIC ($D400) + GTIA ($D000)        |
 | Audio/kbd I/O  | SID ($D400), CIA1 ($DC00)     | POKEY ($D200), PIA ($D300)          |
@@ -429,7 +430,10 @@ The project build still uses `ca65`/`ld65` by default.
 ```
 
 `DetectVideoStandard` must be called early in `start_atari.s`, before any timing
-constant or frame-rate logic runs:
+constant or frame-rate logic runs. For version 1, the required pass condition is a
+PAL Atari 800 XL profile (`PAL_R` bit 3 clear) with `vbiHz=50`. The NTSC branch may
+remain as a defensive runtime path, but it is not a release gate for the first
+version.
 
 ```asm
 DetectVideoStandard:
@@ -450,10 +454,10 @@ DetectVideoStandard:
     rts
 ```
 
-All code that previously used the compile-time `VBI_HZ` constant must load `vbiHz`
-from RAM instead. Timing tables (keyboard repeat, cursor blink, scheduler tick
-divisors, SIO timeout frames) must be indexed by `vbiHz` or stored as separate
-PAL/NTSC variants selected at runtime.
+All code that previously used the compile-time `VBI_HZ` constant must either load
+`vbiHz` from RAM or explicitly document that the value is PAL-only for version 1.
+Do not mark an NTSC compatibility item complete until the code has been revalidated
+under §10.
 
 ### New linker config: `kernal/kernal_atarixl.cfg`
 
@@ -481,10 +485,15 @@ MEMORY {
     ; Icon/mouse pointer data — relocated away from $BF40 (cartridge ROM area)
     ICONS:        start = $3F40, size = $00C0, fill = yes, file = %O;
 
-    ; KERNAL: split to avoid Atari hardware I/O ($D000–$D7FF)
+    ; KERNAL: split to avoid Atari hardware I/O ($D000-$D7FF).
+    ; KERNAL_MID is RAM only in the floppy-first v1 profile, with BASIC off
+    ; and no cartridge installed. Optional cartridge packaging needs a
+    ; separate layout that does not place runtime code/data in $A000-$BFFF.
     KERNALHDR:    start = $C000, size = $0100, fill = yes, file = %O;
     KERNAL_LO:    start = $C100, size = $0F00, fill = yes, file = %O;
-    KERNAL_HI:    start = $E000, size = $1D00, fill = yes, file = %O;
+    KERNAL_MID:   start = $A000, size = $2000, fill = yes, file = %O;
+    KERNAL_HI:    start = $D800, size = $27FA, fill = yes, file = %O;
+    VECTORS:      start = $FFFA, size = $0006, fill = yes, file = %O;
 
     ; VARS BSS — shifted to avoid Atari OS zero page
     VARS:         start = $86C0, size = $0940;
@@ -515,18 +524,21 @@ SEGMENTS {
     files2:             load = KERNALHDR, type = ro;
 
     ; kernal code (all other segments from kernal_bsw.cfg remain)
-    ; Place segments in KERNAL_LO first, then continue in KERNAL_HI.
+    ; Place segments in KERNAL_LO first, then KERNAL_MID, then KERNAL_HI.
     ; Never map executable/data segments into $D000–$D7FF.
     jumptab:            load = KERNAL_LO, type = ro;
     hw_atari:           load = KERNAL_LO, type = ro;   ; replaces hw1a/hw1b
-    irq_atari:          load = KERNAL_LO, type = ro;   ; replaces irq
+    irq_atari:          load = KERNAL_HI, type = ro;   ; replaces irq
     keyboard_atari:     load = KERNAL_HI, type = ro;   ; replaces keyboard1/2/3
-    ; ... all other segments assigned to KERNAL_LO or KERNAL_HI ...
+    vectors_atari:      load = VECTORS,   type = ro;
+    ; ... all other segments assigned to KERNAL_LO, KERNAL_MID, or KERNAL_HI ...
 }
 ```
 
 Verify the final layout with `ld65 --map` and confirm no segment overflows or
-generated output in the I/O area ($D000–$D7FF) or other reserved ranges.
+generated output in the I/O area ($D000–$D7FF) or other reserved ranges. A contiguous
+`$C100-$FFFF` region is invalid on Atari even though it resembles the C64 KERNAL
+shape, because `$D000-$D7FF` is fixed hardware I/O and not RAM.
 
 ---
 
@@ -585,11 +597,10 @@ atari_dlist:
     .word atari_dlist           ; loop back to top of display list
 ```
 
-Display geometry note: the 200-line bitmap and the 24-scanline top border defined
-above work on both PAL and NTSC without modification — the border difference between
-standards shows up only as a larger bottom border on PAL (more total active lines).
-VBI-rate-dependent timing is handled via `vbiHz` (see §5); palette tuning for NTSC
-is deferred to §10.
+Display geometry note: the version 1 gate is the PAL Atari 800 XL profile. The
+200-line bitmap and 24-scanline top border are valid on PAL and should be centered
+there first. NTSC display centering and palette tuning are deferred to §10; do not
+treat "no obvious crash on NTSC" as release evidence.
 
 Initialization:
 ```asm
@@ -625,9 +636,10 @@ target overscan width; normal width (`10`) is the canonical 320-pixel mode-$0F s
 
 On C64, GEOS hooks the CIA1 frame IRQ for its main timing tick. On Atari the
 equivalent is the ANTIC Vertical Blank Interrupt (VBI), which fires as an **NMI**
-once per frame. The frame rate is **not** hard-coded: `DetectVideoStandard` (§5)
-reads `PAL_R` at boot and writes `vbiHz` (50 or 60) into RAM. All VBI-derived timing
-constants must use `vbiHz` rather than a literal 50. Two operating modes are needed
+once per frame. For version 1, validate the PAL 50 Hz path first. `DetectVideoStandard`
+(§5) still reads `PAL_R` at boot and writes `vbiHz` into RAM, but NTSC 60 Hz behavior
+is follow-up compatibility work. Any VBI-derived timing constant that is not explicitly
+PAL-only must use `vbiHz` rather than a literal 50. Two operating modes are needed
 during development:
 
 #### Mode A — OS-assisted (use during Phases 2–4)
@@ -1389,18 +1401,18 @@ Phase 2 gate before considering step 9 done:
 - Validate drawing across the LMS jump boundary (`y=101` to `y=102`) to ensure no wrap artifacts.
 - Confirm GRAFM_W and all GRAFPx registers are zeroed in the GTIA init block so no garbage missile or player data appears on screen.
 
-Preferred jsA8E iteration path (repeatable evidence and diagnostics; not Altirra sign-off):
+Preferred jsA8E iteration path (repeatable PAL evidence and diagnostics):
 - Use `createHeadlessAutomation(...)` from `jsA8E/headless.js` as the primary iteration path. It runs as a pure Node.js process — no browser, no HTTP server, no Chrome CDP wiring, no cache-busting concerns. The returned `api` has the same grouped surface (`system.*`, `media.*`, `debug.*`, `dev.*`, `artifacts.*`, `events.*`) as the browser's `window.A8EAutomation`. Run `npm run test:automation` in `third_party/A8E/jsA8E` to confirm the automation layer before writing scenario scripts.
-- Fall back to the browser path (documented in `JSA8E_AUTOMATION.md`) only when live visual inspection or the harness UI is needed.
-- Start each run by checking `getCapabilities()` / `getSystemState({ timeoutMs: ... })` and treat `groupedApi`, `urlXexLoad`, `urlDiskLoad`, `failureSnapshots`, `progressEvents`, `waitPrimitives`, `cacheControl`, `snapshots`, `memoryWrite`, `memoryWait`, and `resetPortBOverride` as the required automation baseline for Atari bring-up. Treat `getSystemState()` partial returns with structured `error.details.parts` as degraded-but-usable diagnostics, not as a generic automation hang.
+- Fall back to the browser path (documented in `third_party/A8E/jsA8E/AUTOMATION.md`) only when live visual inspection or the harness UI is needed.
+- Start each run by checking `getCapabilities()` / `getSystemState({ timeoutMs: ... })` and treat `groupedApi`, `urlXexLoad`, `urlDiskLoad`, `failureSnapshots`, `progressEvents`, `waitPrimitives`, `cacheControl`, `snapshots`, `memoryWrite`, `memoryWait`, and `resetPortBOverride` as the required automation baseline for Atari bring-up. Also verify the run is PAL (`PAL_R` bit 3 clear) before accepting first-version evidence. Treat `getSystemState()` partial returns with structured `error.details.parts` as degraded-but-usable diagnostics, not as a generic automation hang.
 - Prefer the grouped API surface: `dev.runXex(...)` / `dev.runXexFromUrl(...)`, `media.mountDisk(...)` / `media.mountDiskFromUrl(...)`, `debug.runUntilPcOrSnapshot(...)`, `debug.waitForBreakpoint(...)`, `artifacts.captureFailureState(...)`, and `events.subscribe("progress", ...)`.
 - Prefer deterministic waits (`debug.waitForMemory(...)`, `system.waitForFrames(...)`, `system.waitForCycles(...)`) over fixed sleep windows when gating smoke markers.
 - `system.start()` / `system.pause()` / `system.reset()` are request/response calls that acknowledge completion before resolving; treat later Phase 4 failures as disk/runtime faults unless those lifecycle calls fail explicitly.
 - When boot state matters, use the reset-time bank override support (`system.reset({ portB: $FF })`, `system.boot({ portB: $FF })`, or `dev.runXex({ ..., resetOptions: { portB: $FF } })`) so the harness can rule out XL self-test / ROM-mapping issues before treating a failure as a GEOS regression.
 - For browser retries, prefer `system.reload({ cacheBust: true })` (or explicit `cacheBust` fetch options) before attributing stale behavior to GEOS changes.
 - Treat schema-versioned failure bundles (`artifactSchemaVersion: "2"`) as the default evidence format; they include debug state, bank state, mounted media, console-key state, trace tail, optional disassembly/source context, and optional screenshots.
-- Keep Altirra as the required sign-off path for steps that explicitly call it out (for example 8, 9, 17, 21, 27, and 28).
-- Treat the jsA8E Phase 4 flow as a diagnostic path only, because it still approximates the final setup by swapping `D1:` after the XEX loader reaches the rebased `$0881` smoke entry point.
+- Keep Altirra as the required sign-off path for steps that explicitly call it out by name (8, 9, 27, and 28) and as a Phase 6 release-regression path. Do not mix Altirra or physical-hardware sign-off into a step that is otherwise defined as a jsA8E automation gate.
+- Treat the jsA8E Phase 4 matrix as the canonical automated evidence for step 17. The flow still swaps `D1:` after the XEX loader reaches the rebased `$0881` smoke entry point, so use Altirra for discrepancy debugging and release sign-off, not as an extra hidden condition for checking step 17.
 
 ### Phase 3: Bring up input (OS-assisted mode)
 10. Write `input/joydrv_atari.s`
@@ -1417,36 +1429,37 @@ Phase 3 gate before considering step 13 done:
 14. Write `drv/drv1050.s` using OS `jsr SIOV`
 15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool.
     Correct sector counts to use:
-    - 810 SD: 720 sectors × 128 bytes = 90 KB → 360 GEOS logical blocks (raw)
-    - 1050 ED: **1040 sectors** × 128 bytes = ~130 KB → **520 GEOS logical blocks** (raw)
-    Pass these figures to `tools/atari_geos_disk.py` and to the BAM layout in
-    `drv/drv1050.s`. A BAM sized for fewer blocks leaves tail sectors permanently
-    unallocatable without any error.
+    - Version 1 baseline: 810/1050 single density, 720 sectors × 128 bytes = 90 KB → 360 GEOS logical blocks (raw)
+    - Later 1050 ED support: **1040 sectors** × 128 bytes = ~130 KB → **520 GEOS logical blocks** (raw)
+    Keep `tools/atari_geos_disk.py` and `drv/drv1050.s` on the same geometry. Do not
+    claim 1050 ED compatibility until both the disk-image tool and BAM layout expose
+    the 1040-sector format. A BAM sized for fewer blocks leaves tail sectors
+    permanently unallocatable without any error.
 16. Audit sector-payload references in `kernal/files/`; replace hard-coded `$FE`/`#254` literals with named 256-byte-block constants where needed, without changing GEOS block semantics (see §6.7)
 17. Test: directory listing, file read, file write, disk full detection
 
 Phase 4 gate before considering step 17 done:
 - Make `EnterTurbo`/`ExitTurbo`/`PurgeTurbo` Atari-safe first. Baseline Atari 1050 bring-up can treat them as compatibility no-ops (or a tiny state-only shim) until a real acceleration path exists.
 - Use `createHeadlessAutomation(...)` from `jsA8E/headless.js` as the primary iteration path for faster, deterministic smoke runs (no browser or HTTP server needed). Fall back to the browser harness or Altirra-with-INI path only for visual inspection or when a problem does not reproduce headless.
-- Use Altirra with `build/atarixl/phase4_test.ini` and `"Simulator: Error mode" = 2` for sign-off-grade debugging.
+- Use Altirra with `build/atarixl/phase4_test.ini` and `"Simulator: Error mode" = 2` for sign-off-grade debugging and Phase 6 release regression, but not as a second hidden checkbox condition for step 17.
 - Always start the smoke XEX through the preflight/boot path (`dev.runXex(...)` / `dev.runXexFromUrl(...)`) and preserve the emitted progress checkpoints plus the structured boot-failure artifact. Enable boot guards (`maxBootInstructions`, `maxBootCycles`, `detectTightLoop`) in scripted runs so boot-loop failures are explicit and reproducible. For the current Phase 4 smoke XEX, the working entry flow is `awaitEntry: false` plus a normal breakpoint wait at `$0881`; treat `xex_boot_failed`, ROM/protected-memory overlap, boot-buffer placement, self-test-visible bank-state reports, and any explicit lifecycle-request timeout as automation diagnostics that must be cleared before evaluating GEOS disk code.
 - Use `media.mountDisk(...)` / `media.mountDiskFromUrl(...)` for the writable ATR swap, and record `getSystemState({ timeoutMs: ... })` before and after the mount so the artifact bundle captures the exact ROM/media/bank state for the failed run even when one read degrades into partial state.
 - After resuming from `$0881`, prefer marker-driven waits (`debug.waitForMemory(...)`) and `debug.runUntilPcOrSnapshot(...)` instead of a single fixed-duration wait; this makes partial progress and failure phase boundaries reproducible in artifacts.
 - For bring-up, use reset-time `PORTB` overrides to force the intended XL boot mapping first; if the harness still fails before `$0881`, debug that boot path using the returned bank state, trace tail, optional disassembly, source context, and explicit pause/fault reason instead of continuing with generic timeout retries.
 - Require the smoke path to advance past `OpenDisk -> GetDirHead -> EnterTurbo -> ReadBlock`. If a stop occurs earlier, capture the structured failure bundle and resolve that earlier boot/runtime fault before attributing the failure to `drv1050` or GEOS file-system logic.
-- Only sign off step 17 after directory listing, sequential file read/write, and disk-full detection all pass on Atari `.atr` images such as `build/atarixl/geos.atr` and `build/atarixl/blank_geos.atr`.
+- Only sign off step 17 after directory listing, sequential file read/write, and disk-full detection all pass in the PAL jsA8E matrix on Atari `.atr` images such as `build/atarixl/geos.atr` and `build/atarixl/blank_geos.atr`.
 
 ### Phase 5: ROM-off desktop (floppy-first, no mandatory cartridge)
 18. Write OS ROM disable stub in `start_atari.s`; test RAM at $C000 after disable using the existing low-RAM staging/copy-under-ROM path
 19. Switch VBI handler to Mode B (direct NMI at $FFFA)
 20. Build a floppy/XEX bootstrap path that enters GEOS desktop without requiring a cartridge (PAL XL profile)
-21. Verify GEOS desktop loads end-to-end from floppy bootstrap + disk image; then test on **PAL** hardware
+21. Verify the Atari-native desktop loads end-to-end in the PAL jsA8E floppy bootstrap path from XEX + ATR
 
 Phase 5 prerequisites and disk rule:
-- Do not start ROM-disable desktop work until Phase 4 disk I/O succeeds end-to-end with OS ROM enabled in Altirra. Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary iteration path for faster, deterministic smoke runs — no browser or HTTP server needed. Fall back to the browser path only for visual inspection or when a problem does not reproduce headless.
+- Do not start ROM-disable desktop work until Phase 4 disk I/O succeeds end-to-end in the PAL jsA8E matrix with OS ROM enabled. Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary iteration path for faster, deterministic smoke runs — no browser or HTTP server needed. Fall back to the browser path only for visual inspection or when a problem does not reproduce headless.
 - Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Reuse the Phase 4 staging/copy-under-ROM path and do not block Phase 5 on raw POKEY SIO.
 - If a raw-SIO optimisation path is prototyped in Phase 5 or later, calculate the POKEY baud-rate divisor against the **PAL clock (~1.773 MHz)**, not the NTSC figure (~1.790 MHz). Standard Atari SIO at 19,200 baud: `divisor = (1,773,000 / (2 × 19,200)) − 7 ≈ 39`. Using the NTSC divisor (~40) on PAL hardware shifts the baud rate by ~1%, which is within tolerance for most drives but will cause framing errors on marginal hardware.
-- A "desktop smoke frame" (for example a kernel-rendered placeholder reached after `GetFile("DESK TOP")`) is useful for bootstrap diagnostics only and does **not** satisfy step 21. Step 21 requires the actual `DESK TOP` application code path to execute and render correctly on Atari.
+- A "desktop smoke frame" (for example a kernel-rendered placeholder reached after `GetFile("DESK TOP")`) is useful for bootstrap diagnostics only and does **not** satisfy step 21. Step 21 requires the Atari-native desktop application path to execute and render correctly on the PAL jsA8E profile. Stock C64 `DESK TOP` launch evidence proves only disk/bootstrap flow until that application is ported or replaced.
 - Current repository scope includes Atari-ported KERNAL sources plus a minimal
   Atari-native `DESK TOP` application in `apps/desktop_atari.s`. That native app is
   useful for proving the ROM-off handoff and a visible shell frame, but it is not a
@@ -1458,7 +1471,7 @@ Phase 5 prerequisites and disk rule:
 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
 23. Connect VBI counter to `kernal/time/` clock routines
 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
-25. Regression-test all graphics, font, menu, dialog, and file operations
+25. Regression-test all graphics, font, menu, dialog, and file operations under PAL jsA8E, then repeat milestone sign-off in Altirra PAL XL and on PAL hardware
 26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80×)
 
 ### Phase 7: Optional cartridge packaging
@@ -1471,12 +1484,12 @@ Step 22 P/M init requirement:
   will appear on screen if it is not explicitly cleared before P/M DMA is enabled.
 
 Step 24 implementation requirement:
-- Poll ST mouse quadrature using ANTIC DLIs (~300–500 Hz by placing DLI on selected scanlines), then apply accumulated deltas in the VBI. The VBI rate (50 Hz PAL / 60 Hz NTSC) is read from the `vbiHz` runtime variable set by `DetectVideoStandard`.
+- Poll ST mouse quadrature using ANTIC DLIs (~300–500 Hz by placing DLI on selected scanlines), then apply accumulated deltas in the VBI. Version 1 tuning is PAL 50 Hz; if the code is intended to survive NTSC later, read the VBI rate from `vbiHz` instead of embedding the frame rate.
 
 Step 26 timing requirement:
 - Use **~1.773 MHz** as the PAL CPU clock for all delay loop calibration — not 1.79 MHz (that is the NTSC figure). The ratio against a PAL C64 (~0.985 MHz) is ~1.80×, not 1.79×.
 - Calibrate delays with ANTIC/P-M DMA enabled; effective CPU throughput is lower during active display than during VBI due to DMA cycle stealing.
-- All frame-based timing constants (cursor blink, keyboard repeat, scheduler tick divisors) must load `vbiHz` at runtime rather than assume 50.
+- Version 1 constants may be calibrated for PAL 50 Hz, but any timing path advertised as PAL/NTSC-compatible must load `vbiHz` at runtime rather than assume 50.
 
 Phase 6 regression note:
 - Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary regression capture path (screenshots, traces, failure bundles, and scripted input) across Phases 2-4 smoke binaries and selected cartridge/ROM-off bring-up binaries. Fall back to the browser path only for live visual inspection. Then repeat milestone sign-off in Altirra and on PAL hardware where required.
@@ -1517,11 +1530,10 @@ OS `SIOV` through a low-RAM ROM-banking trampoline until an optional optimized r
 SIO path is added. Keep both modes distinct and do not mix OS-ROM-active assumptions
 with ROM-off code.
 
-**Runtime timing policy.** The frame rate is determined at boot by `DetectVideoStandard`
-reading `PAL_R` ($D014) and writing `vbiHz` (50 or 60) into RAM. All timing logic must
-load `vbiHz` rather than use a literal constant, so the same binary runs correctly on
-both PAL and NTSC hardware. NTSC validation scope is limited to display centering,
-palette tuning, and regression (see §10).
+**Runtime timing policy.** The version 1 release target is PAL 50 Hz. `DetectVideoStandard`
+reads `PAL_R` ($D014) and writes `vbiHz` into RAM so later NTSC work does not require
+unwinding hard-coded assumptions. Do not claim the same binary runs correctly on NTSC
+until §10 validation has been completed.
 
 **ANTIC DMA cycle stealing.** Effective CPU throughput is lower during active display
 than during VBI, especially with mode `$0F` plus P/M DMA enabled. Validate any
@@ -1581,8 +1593,9 @@ marginal drives and for any hand-tuned delay loops.
 
 **PAL vs NTSC runtime detection.** `DetectVideoStandard` in `start_atari.s` reads
 `PAL_R` ($D014, GTIA read-only) at boot and writes `vbiHz`/`videoStd` into RAM.
-All timing logic uses those variables. A compile-time `VIDEO_STD` constant is **not
-used** for Atari XL; the same binary works on both PAL and NTSC hardware.
+A compile-time `VIDEO_STD` constant is **not used** for Atari XL. For version 1,
+only the PAL branch is release-sign-off scope; the NTSC branch is a compatibility
+hook until §10 is complete.
 
 ### 9.1 Review Follow-Ups (2026-03-10)
 
@@ -1627,17 +1640,39 @@ review to keep explicitly on the porting backlog:
   split used by the Atari display list and LUT: the critical transition is
   `y = 101 -> 102`.
 
+### 9.2 Review Follow-Ups (2026-05-04)
+
+The 2026-05-04 process review narrowed version 1 to a PAL Atari 800 XL and removed
+hidden PAL/NTSC and emulator/hardware gate mixing from the checklist:
+
+- **PAL first-version scope.** PAL jsA8E and PAL Altirra/hardware sign-off are the
+  only first-version targets. NTSC remains a later compatibility pass; do not use
+  unvalidated NTSC behavior as evidence for a completed PAL step.
+- **I/O-hole linker rule.** Every Atari linker config must split around `$D000-$D7FF`.
+  The C64-style contiguous `$C100-$FFFF` KERNAL region is invalid on Atari because it
+  maps executable/data bytes onto GTIA/POKEY/PIA/ANTIC registers.
+- **Automation preflight rule.** Headless jsA8E runners that produce checklist
+  evidence must check the automation capabilities, record bounded `getSystemState()`
+  snapshots before/after media changes, verify PAL mode via `PAL_R`, and launch with
+  the documented reset-time `PORTB=$FF` override.
+- **Disk geometry scope.** Version 1 evidence is 810/1050 single-density 720-sector
+  ATR media. 1050 enhanced-density support is valid only after the builder and driver
+  both expose the 1040-sector layout.
+- **Desktop evidence scope.** A kernel smoke frame and stock C64 `DESK TOP` launch are
+  diagnostics. The completed desktop gate is the Atari-native desktop rendering path;
+  a practical Atari file manager remains application work.
+
 ---
 
 ## 10. NTSC Follow-Up Scope
 
-Because `DetectVideoStandard` (§5) reads `PAL_R` at boot and populates `vbiHz` and
-`videoStd` at runtime, and because all timing constants use those RAM variables rather
-than compile-time literals, **no separate NTSC build is required**. The same binary
-runs correctly on both PAL and NTSC hardware.
+Because version 1 targets PAL Atari 800 XL only, NTSC support is a follow-up
+compatibility scope. Keep `DetectVideoStandard` (§5) and `vbiHz` so NTSC can be
+validated without a separate architecture, but do not state that the same binary
+runs correctly on NTSC until the following checks pass.
 
-NTSC validation should start only after the PAL baseline (Phases 1–5) is stable.
-The remaining delta is small:
+NTSC validation should start only after the PAL baseline is stable. The expected
+delta is:
 
 1. **Display-list border centering.** The 24-line top border produces a larger bottom
    border on PAL than on NTSC (PAL has more total ANTIC active lines). Re-test on NTSC

@@ -27,6 +27,11 @@ const JSA8E_DIR = path.resolve(REPO_ROOT, "third_party/A8E/jsA8E");
 const BUILD_DIR = path.resolve(REPO_ROOT, "build/atarixl");
 
 const { createHeadlessAutomation } = require(path.join(JSA8E_DIR, "headless"));
+const {
+  BOOT_GUARDS,
+  readAutomationState,
+  verifyAutomationPreflight,
+} = require("./jsa8e_preflight");
 
 const ENTRY_PC = 0x0881;
 
@@ -200,6 +205,10 @@ async function main() {
   try {
     const api = runtime.api;
     await api.whenReady();
+    await verifyAutomationPreflight(api, {
+      label: "Phase 4 disk smoketest",
+      timeoutMs: 3000,
+    });
 
     const xexData  = new Uint8Array(fs.readFileSync(xexPath));
     const diskData = new Uint8Array(fs.readFileSync(diskPath));
@@ -214,6 +223,9 @@ async function main() {
       awaitEntry:   false,
       start:        true,
       resetOptions: { portB: 0xff },
+      maxBootInstructions: BOOT_GUARDS.maxBootInstructions,
+      maxBootCycles: BOOT_GUARDS.maxBootCycles,
+      detectTightLoop: BOOT_GUARDS.detectTightLoop,
     });
 
     const entryTimeout = options.bootTimeoutMs;
@@ -228,7 +240,9 @@ async function main() {
     console.log("XEX reached entry: PC=$" +
                 ep.pc.toString(16).toUpperCase().padStart(4, "0"));
 
+    await readAutomationState(api, "Phase 4 before D1 mount", 3000);
     await api.media.mountDisk(diskData, { name: path.basename(diskPath), slot: 0 });
+    await readAutomationState(api, "Phase 4 after D1 mount", 3000);
     console.log("Mounted " + path.basename(diskPath) + " as D1:");
 
     await api.debug.setBreakpoints([]);

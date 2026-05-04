@@ -92,8 +92,8 @@ Run `make` to build the original "BSW" GEOS for C64. This will create the follow
 * disk image: `geos.d64`
 
 Run `make VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari` to build the Atari XL
-port artifacts. This now creates an Atari ATR image at `build/atarixl/geos.atr`
-using `tools/atari_geos_disk.py`.
+port artifacts for the version 1 target: PAL Atari 800 XL. This now creates an
+Atari ATR image at `build/atarixl/geos.atr` using `tools/atari_geos_disk.py`.
 
 The Atari disk builder formats a 720-sector ATR with a 20x18 logical GEOS block
 map (360 logical 256-byte blocks) that matches the current `drv1050` geometry.
@@ -130,7 +130,7 @@ All output will be put into `build/<variant>`.
 jsA8E can run as a pure Node.js process — no browser, no HTTP server, no Chrome
 DevTools Protocol. This is the recommended default path for automated smoke
 checks and CI. For a quick-start, per-scenario recipes, and current failure
-modes, see `JSA8E_AUTOMATION.md`.
+modes, see `third_party/A8E/jsA8E/AUTOMATION.md`.
 
 ### Headless Node.js (recommended)
 
@@ -187,11 +187,11 @@ cache-busting fetch/reload controls, and deterministic wait helpers
 
 The jsA8E headless Phase 4 path now reaches end-to-end pass state
 (`PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`) on the current smoketest matrix.
-Altirra remains the required sign-off path before checking step completion.
+That PAL matrix is the automated evidence for `PORTING.md` step 17.
 
-Use the harness as the browser-side iteration path. Keep Altirra as the sign-off
-emulator for step completion and for any disk-path result that must match the
-intended `D1:` boot configuration exactly.
+Use the harness as the browser-side iteration path. Keep Altirra as the
+sign-off-grade emulator for discrepancies, PAL release regression, and steps that
+explicitly name Altirra.
 
 For repeatable headless Phase 4 evidence on multiple disk images, run:
 

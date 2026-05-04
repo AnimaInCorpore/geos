@@ -63,6 +63,11 @@
 
 .segment "start_atari"
 
+PHASE5_STAGE_BASE  = $2000
+PHASE5_INPUT_SRC   = $7800
+PHASE5_INPUT_DST   = $fd00
+PHASE5_INPUT_SIZE  = $0180
+
 .ifdef atarixl_disk_smoketest
 PHASE4_DDRB        = $04e7
 PHASE4_PORTB       = $04e8
@@ -113,10 +118,6 @@ PHASE4_VARS_SIZE   = $0940
 
 .ifdef atarixl_desktop_smoketest
 PHASE5_STATUS      = $0600
-PHASE5_STAGE_BASE  = $2000
-PHASE5_INPUT_SRC   = $7800
-PHASE5_INPUT_DST   = $fd00
-PHASE5_INPUT_SIZE  = $0180
 .endif
 
 _ResetHandle:
@@ -166,7 +167,10 @@ _ResetHandle:
 	; hit OS ROM code if called before the disable.
 	jsr InstallAtariSioBridge
 	jsr InstallDisableRomStub
+	lda #$00
+	sta NMIEN
 	jsr $0300 ; Call the stub at its RAM location — OS ROM now off
+	jsr Phase5InstallBootstrapPayloads
 .endif
 
 	; Phase 2 bring-up: ANTIC mode $0F display list and GTIA palette.
@@ -356,7 +360,6 @@ DisableRomStubTemplate:
 	rts
 DisableRomStubTemplateEnd:
 
-.ifdef atarixl_desktop_smoketest
 ; Install staged bootstrap payloads after OS ROM has been disabled.
 ; Stage layout at $2000:
 ;   +$0000 .. +$0FFF : $C000-$CFFF  (KERNALHDR + KERNAL_LO, 16 pages)
@@ -428,7 +431,6 @@ Phase5InstallBootstrapPayloads:
 	ora r2H
 	bne @copyInput
 	rts
-.endif
 
 InstallAtariSioBridge:
 	ldy #0
@@ -726,15 +728,13 @@ Phase4MarkFullPass:
 	sta PHASE4_RESULTS
 	rts
 
-; Install the staged $C000-$FFFF image from conventional RAM after ROM is disabled.
+; Install the staged ROM-off image from conventional RAM after ROM is disabled.
 Phase4InstallHighKernal:
-	; Atari keeps $D000-$D7FF mapped to I/O registers regardless of PORTB.
-	; Copy around that hole so we do not scribble GTIA/POKEY/PIA/ANTIC state
-	; and accidentally remap ROM while installing the staged kernal image.
-	;
-	; Source layout at $2000 mirrors $C000-$FFFF contiguously, so:
+	; Source layout at $2000 follows the split Atari linker layout:
 	;   $2000-$2FFF -> $C000-$CFFF
-	;   $3800-$5FFF -> $D800-$FFFF
+	;   $3000-$4FFF -> $A000-$BFFF
+	;   $5000-$77FF -> $D800-$FFFF
+	; Atari keeps $D000-$D7FF mapped to I/O registers regardless of PORTB.
 	LoadW r0, PHASE4_KERNAL_SRC0
 	LoadW r1, $c000
 	ldx #$10
@@ -750,7 +750,22 @@ Phase4InstallHighKernal:
 	dex
 	bne @page
 
-	LoadW r0, (PHASE4_KERNAL_SRC0 + $1800)
+	LoadW r0, (PHASE4_KERNAL_SRC0 + $1000)
+	LoadW r1, $a000
+	ldx #$20
+@pageA:
+	ldy #0
+@byteA:
+	lda (r0),y
+	sta (r1),y
+	iny
+	bne @byteA
+	inc r0H
+	inc r1H
+	dex
+	bne @pageA
+
+	LoadW r0, (PHASE4_KERNAL_SRC0 + $3000)
 	LoadW r1, $d800
 	ldx #$28
 @pageHi:

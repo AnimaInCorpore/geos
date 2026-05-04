@@ -573,10 +573,12 @@ $(BUILD_DIR)/phase2_smoketest.xex: $(BUILD_DIR)/kernal/phase2_smoketest.bin
 	dd if=$(BUILD_DIR)/kernal/phase2_smoketest.bin bs=1 skip=7552 count=192 >> $@ 2> /dev/null
 	printf "\x00\xC0\xFF\xC0" >> $@
 	dd if=$(BUILD_DIR)/kernal/phase2_smoketest.bin bs=1 skip=7744 count=256 >> $@ 2> /dev/null
-	printf "\x00\xC1\xFF\xFF" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase2_smoketest.bin bs=1 skip=8000 count=16128 >> $@ 2> /dev/null
-	printf "\x00\xD0\xFF\xFF" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase2_smoketest.bin bs=1 skip=24128 count=12288 >> $@ 2> /dev/null
+	printf "\x00\xC1\xFF\xCF" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase2_smoketest.bin bs=1 skip=8000 count=3840 >> $@ 2> /dev/null
+	printf "\x00\xA0\xFF\xBF" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase2_smoketest.bin bs=1 skip=11840 count=8192 >> $@ 2> /dev/null
+	printf "\x00\xD8\xFF\xFF" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase2_smoketest.bin bs=1 skip=20032 count=10240 >> $@ 2> /dev/null
 	printf "\xE0\x02\xE1\x02\x01\x05" >> $@
 
 $(BUILD_DIR)/kernal/phase3_input_smoketest.bin: $(PREFIXED_KERNAL_OBJS) kernal/kernal_atarixl_smoketest.cfg
@@ -594,10 +596,12 @@ $(BUILD_DIR)/phase3_input_smoketest.xex: $(BUILD_DIR)/kernal/phase3_input_smoket
 	dd if=$(BUILD_DIR)/kernal/phase3_input_smoketest.bin bs=1 skip=7552 count=192 >> $@ 2> /dev/null
 	printf "\x00\xC0\xFF\xC0" >> $@
 	dd if=$(BUILD_DIR)/kernal/phase3_input_smoketest.bin bs=1 skip=7744 count=256 >> $@ 2> /dev/null
-	printf "\x00\xC1\xFF\xFF" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase3_input_smoketest.bin bs=1 skip=8000 count=16128 >> $@ 2> /dev/null
-	printf "\x00\xD0\xFF\xFF" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase3_input_smoketest.bin bs=1 skip=24128 count=12288 >> $@ 2> /dev/null
+	printf "\x00\xC1\xFF\xCF" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase3_input_smoketest.bin bs=1 skip=8000 count=3840 >> $@ 2> /dev/null
+	printf "\x00\xA0\xFF\xBF" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase3_input_smoketest.bin bs=1 skip=11840 count=8192 >> $@ 2> /dev/null
+	printf "\x00\xD8\xFF\xFF" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase3_input_smoketest.bin bs=1 skip=20032 count=10240 >> $@ 2> /dev/null
 	printf "\x00\x20\x7F\x21" >> $@
 	dd if=$(BUILD_DIR)/input/$(INPUT).bin bs=1 count=384 >> $@ 2> /dev/null
 	printf "\xE0\x02\xE1\x02\x01\x05" >> $@
@@ -611,8 +615,8 @@ $(BUILD_DIR)/phase4_disk_smoketest.xex: $(BUILD_DIR)/kernal/phase4_disk_smoketes
 	printf "\xFF\xFF" > $@
 	printf "\x80\x08\xFF\x1F" >> $@
 	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 count=6016 >> $@ 2> /dev/null
-	printf "\x00\x20\xFF\x5F" >> $@
-	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6848 count=16384 >> $@ 2> /dev/null
+	printf "\x00\x20\xFF\x77" >> $@
+	dd if=$(BUILD_DIR)/kernal/phase4_disk_smoketest.bin bs=1 skip=6848 count=22528 >> $@ 2> /dev/null
 	printf "\x00\x90\x7F\x9D" >> $@
 	cat $(BUILD_DIR)/drv/$(DRIVE).bin /dev/zero | dd bs=1 count=3456 >> $@ 2> /dev/null
 	printf "\x80\x9D\xFF\x9F" >> $@

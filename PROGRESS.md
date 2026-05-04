@@ -37,30 +37,31 @@ Update rule: after each completed porting step, change exactly one matching chec
 - [x] 14. Write `drv/drv1050.s` using OS `jsr SIOV`
 - [x] 15. Create a GEOS-format disk image with Atari geometry using a custom conversion tool
 - [x] 16. Audit and fix all `$FE`/`#254` sector-payload literals in `kernal/files/` (see section 6.7 in `PORTING.md`)
-- [x] 17. Test: directory listing, file read, file write, disk full detection (Automated `jsA8E` matrix pass; manual Altirra sign-off pending)
+- [x] 17. Test: directory listing, file read, file write, disk full detection (PAL `jsA8E` matrix pass)
 
 ## Phase 5: ROM-off desktop (floppy-first, no mandatory cartridge)
 
 - [x] 18. Write OS ROM disable stub in `start_atari.s`; test RAM at `$C000` after disable
 - [x] 19. Switch VBI handler to Mode B (direct NMI at `$FFFA`)
 - [x] 20. Build a floppy/XEX bootstrap path that enters GEOS desktop without requiring a cartridge (PAL XL profile)
-- [x] 21. Verify GEOS desktop loads end-to-end from floppy bootstrap + disk image; then test on hardware
+- [x] 21. Verify the Atari-native desktop loads end-to-end in the PAL jsA8E floppy bootstrap path from XEX + ATR
 
 ## Phase 6: Integration and polish
 
 - [x] 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
 - [x] 23. Connect VBI counter to `kernal/time/` clock routines
 - [x] 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
-- [ ] 25. Regression-test all graphics, font, menu, dialog, and file operations
-- [ ] 26. Tune timing loops (Atari 1.79 MHz vs C64 1 MHz; cycle-count-dependent delays differ)
+- [ ] 25. Regression-test all graphics, font, menu, dialog, and file operations under PAL jsA8E, then repeat milestone sign-off in Altirra PAL XL and on PAL hardware
+- [ ] 26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80x)
 
 ## Phase 7: Optional cartridge packaging
 
-- [ ] 27. Create 8 KB cartridge ROM image for `$A000-$BFFF`; test cold-boot in Altirra
+- [ ] 27. Create 8 KB cartridge ROM image for `$A000-$BFFF`; test cold-boot in Altirra PAL XL profile
 - [ ] 28. Verify GEOS desktop loads end-to-end from cartridge + floppy; then repeat hardware sign-off
 
 ### Phase 6 Notes
 
+- 2026-05-04: Process review only; no checkbox changed. The first-version target is now explicitly PAL Atari 800 XL. `PORTING.md` no longer mixes PAL automation gates with hidden Altirra/hardware conditions for steps 17 and 21; those sign-offs are tracked under Phase 6 release regression or steps that explicitly name Altirra. The Atari linker process was tightened to reject C64-style contiguous `$C100-$FFFF` mappings because `$D000-$D7FF` is fixed Atari hardware I/O, and the clean `kernal/kernal_atarixl*.cfg` baseline configs now split KERNAL placement around that hole.
 - 2026-03-17: Completed step 24 by adding `input/mse_stmouse.s` as a dedicated Atari ST mouse input driver for joystick port 1 (`PORTA` high nibble + `TRIG1`), with gray-code quadrature decoding adapted from `input/amigamse.s` and Atari-specific hardware reads/clamping. Updated `Makefile` so `mse_stmouse` is built as a selectable input binary (`build/atarixl/input/mse_stmouse.bin`) and can be used via `INPUT=mse_stmouse`.
 - 2026-03-17: Validation for step 24 changes: `make clean && make VARIANT=atarixl DRIVE=drv1050 INPUT=mse_stmouse all` (PASS). Regression check of existing Atari disk bring-up path after integration: `make clean && make atarixl-disk-smoketest && node tools/phase4_disk_run.js` (PASS: `PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`).
 - 2026-03-17: Completed step 23 by replacing the Atari build's CIA-based `_DoUpdateTime` path in `kernal/time/time1.s` with a VBI-backed clock path. The Atari path now reads `RTCLOK` (`$12-$14`), accumulates elapsed VBI ticks using PAL/NTSC-aware thresholds (`PAL_R` bit 3 => 50/60 Hz), advances `seconds/minutes/hour`, and calls `DateUpdate` on midnight rollover. Added Atari clock state variables (`atariClockInit`, `atariClockSubTicks`, `atariRtcDelta*`, `atariRtcLast*`) to `kernal/vars/vars.s`, and replaced the Atari alarm-audio branch with a hardware-safe countdown stub that avoids SID writes. Validation: `make clean && make -j4 atarixl`; `make clean && make atarixl-disk-smoketest && node tools/phase4_disk_run.js` (PASS: `PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`).
@@ -111,6 +112,7 @@ Update rule: after each completed porting step, change exactly one matching chec
 - 2026-03-16: Continued step 17 disk-path bring-up in jsA8E headless. Updated the Phase 4 smoketest packing/copy-under-ROM path to stage a contiguous `$C000-$FFFF` image at `$2000-$5FFF` (single 16 KB copy), moved `files6*`/`files8`/`files9`/`files10` out of the Atari `$D000-$D7FF` I/O hole for this smoketest config, and fixed Atari zero-page math indexing by keeping `zpage=$00` while `GEOS_ZP_OFFSET=$7E`. The smoketest now exits deterministically instead of BRK-looping: it reaches `POST_READ` with `PHASE4_RESULTS=$05` (`directory=pass`, `write=pass`) and fails on readback compare (`PHASE4_ERROR=$2E`, first mismatch at byte 1), so step 17 remains open with the remaining blockers narrowed to readback data path + disk-full detection.
 - 2026-03-17: Continued step 17 and cleared the remaining jsA8E Phase 4 blockers end-to-end. Driver fixes in `drv/drv1050.s`: (1) preserve `X` status in `__DoneWithIO` so read/write errors are not masked, (2) normalize and store wrapped Atari sector indices in `__SetNextFree`, (3) make `__SetNextFree` call `_AllocateBlock` (instead of probe-only `FindBAMBit`) so BAM/free-count state advances per allocated block, (4) fix `__CalcBlksFree` loop bounds to skip only track 18 and stop at track 20, and (5) preserve GEOS `r2` across `ReadWrite256` so `_ReadFile`'s remaining-byte counter survives driver I/O. Smoketest harness fix in `kernal/start/start_atari.s`: `Phase4InstallHighKernal` now copies `$C000-$CFFF` and `$D800-$FFFF` while skipping Atari's fixed I/O hole `$D000-$D7FF`, preventing copy-under-ROM from scribbling hardware registers (including `PORTB`) and leaving high-kernal vectors/code zeroed. Validation: `make atarixl-disk-smoketest && node tools/phase4_disk_run.js` now reports `PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`, and `ALL PASS — directory, read, write, and disk-full all verified.` Step 17 remains unchecked pending the required Altirra sign-off run (`build/atarixl/phase4_test.ini`, PAL 800XL profile) before marking complete.
 - 2026-03-17: Added a repeatable Phase 4 multi-image matrix path for step 17 evidence. `tools/phase4_disk_run.js` now accepts CLI options (including `--disk`) and `tools/phase4_disk_matrix_run.js` runs the smoketest against writable copies of `build/atarixl/phase4_disk_test.atr`, `build/atarixl/geos.atr`, and `build/atarixl/blank_geos.atr`. New target: `make atarixl-disk-smoketest-matrix`. Current matrix result is pass on all three images (`PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00` in each run). Step 17 remains unchecked because Altirra sign-off is still required by `PORTING.md`.
+- 2026-05-04: Process review update for step 17 evidence only; no checkbox changed. The PAL jsA8E multi-image matrix is now the documented automated gate for step 17, while Altirra remains a Phase 6/release-regression and discrepancy-debugging path instead of a hidden second condition for this checked item.
 - Reference note for ongoing porting: use the Atari Hardware Reference Manual in `third_party/A8E/AHRM` as the primary hardware-behavior source when debugging emulator-vs-hardware gaps. For the current Phase 4 work, prioritize `9. Serial I-O (SIO) Bus`, `10. Disk drives`, `5. POKEY`, `4. ANTIC`, and `14. Reference` (memory map/register list).
 
 ### Phase 5 Notes

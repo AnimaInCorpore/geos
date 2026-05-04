@@ -31,6 +31,11 @@ const path = require("node:path");
 const REPO_ROOT = path.resolve(__dirname, "..");
 const JSA8E_DIR = path.resolve(REPO_ROOT, "third_party/A8E/jsA8E");
 const { createHeadlessAutomation } = require(path.join(JSA8E_DIR, "headless"));
+const {
+  BOOT_GUARDS,
+  readAutomationState,
+  verifyAutomationPreflight,
+} = require("./jsa8e_preflight");
 
 const ENTRY_PC = 0x0881;
 const ADDR_STATUS = 0x0600;
@@ -360,6 +365,10 @@ async function main() {
   try {
     const api = runtime.api;
     await api.whenReady();
+    await verifyAutomationPreflight(api, {
+      label: "Phase 5 desktop bootstrap",
+      timeoutMs: 3000,
+    });
 
     const xexData = new Uint8Array(fs.readFileSync(options.xexPath));
     const diskData = new Uint8Array(fs.readFileSync(options.diskPath));
@@ -373,6 +382,9 @@ async function main() {
       awaitEntry: false,
       start: true,
       resetOptions: { portB: 0xff },
+      maxBootInstructions: BOOT_GUARDS.maxBootInstructions,
+      maxBootCycles: BOOT_GUARDS.maxBootCycles,
+      detectTightLoop: BOOT_GUARDS.detectTightLoop,
     });
 
     const entryEvent = await api.debug.waitForBreakpoint({ timeoutMs: options.bootTimeoutMs });
@@ -382,7 +394,9 @@ async function main() {
       process.exit(3);
     }
 
+    await readAutomationState(api, "Phase 5 before D1 mount", 3000);
     await api.media.mountDisk(diskData, { name: path.basename(options.diskPath), slot: 0 });
+    await readAutomationState(api, "Phase 5 after D1 mount", 3000);
     await api.debug.setBreakpoints([]);
     if (runtime.app && typeof runtime.app.setMemoryWriteHook === "function") {
       runtime.app.setMemoryWriteHook(function (

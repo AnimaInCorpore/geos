@@ -23,6 +23,7 @@ const TRACE_SYMBOL_NAMES = [
   "CopyFString",
   "DoMenu",
   "DrawMenu",
+  "DoDlgBox",
   "GetScanLine",
   "BitmapUp",
   "BitmapUpHelp",
@@ -89,6 +90,7 @@ function parseArgs(argv) {
     pollCycles: DEFAULT_POLL_CYCLES,
     traceLimit: DEFAULT_TRACE_LIMIT,
     traceCycles: DEFAULT_TRACE_CYCLES,
+    traceStatusThreshold: 0x80,
     screenshotPath: "",
   };
 
@@ -146,6 +148,12 @@ function parseArgs(argv) {
       options.traceCycles = parsePositiveInt(argv[i], "--trace-cycles");
       continue;
     }
+    if (arg === "--trace-status-threshold") {
+      i++;
+      if (i >= argv.length) throw new Error("--trace-status-threshold requires a value");
+      options.traceStatusThreshold = parsePositiveInt(argv[i], "--trace-status-threshold");
+      continue;
+    }
     if (arg === "--screenshot") {
       i++;
       if (i >= argv.length) throw new Error("--screenshot requires a path");
@@ -164,6 +172,8 @@ function parseArgs(argv) {
         "  --poll-cycles <count>    Cycles per trace poll\n" +
         "  --trace-limit <count>    Number of draw breakpoints to log\n" +
         "  --trace-cycles <count>   Total cycles to sample after StartAppl\n" +
+        "  --trace-status-threshold <value>\n" +
+        "                           Minimum phase-5 status before tracing starts\n" +
         "  --screenshot <path>      Save a PNG screenshot artifact"
       );
       process.exit(0);
@@ -416,8 +426,8 @@ async function main() {
     let status = 0;
     for (let chunk = 0; chunk < 500; chunk++) {
       await api.system.waitForCycles({ count: options.pollCycles });
-      status = await api.debug.readMemory(0x04d0);
-      if (status >= 0x80 || status >= 0xe1) {
+      status = await api.debug.readMemory(0x0600);
+      if (status >= options.traceStatusThreshold || status >= 0xe1) {
         break;
       }
     }
@@ -428,7 +438,7 @@ async function main() {
       process.exit(1);
     }
 
-    if (status < 0x80) {
+    if (status < options.traceStatusThreshold) {
       console.error("Desktop handoff was not reached; nothing to trace.");
       process.exit(2);
     }
