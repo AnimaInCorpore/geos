@@ -195,26 +195,11 @@ DesktopStart:
         LoadB PHASE5_STATUS, $81
 .endif
 
-        ; Blit icons directly (BlitIcon6x16 hangs on Atari emulation)
-        ; Manually blit icon to screen/back buffer
-        ldx #16
+        ; Blit icons directly with uncompressed bitmap data.
         LoadW r0, SCREEN_BASE + (48 * SC_BYTE_WIDTH) + 4
         LoadW r1, BACK_SCR_BASE + (48 * SC_BYTE_WIDTH) + 4
         LoadW r2, DiskIconRaw
-        @blitLoop:
-        ldy #3
-        @blitCol:
-        lda (r2),y
-        sta (r0),y
-        sta (r1),y
-        dey
-        bpl @blitCol
-        AddVW SC_BYTE_WIDTH, r0
-        AddVW SC_BYTE_WIDTH, r1
-        AddVW 4, r2
-        dex
-        bne @blitLoop
-
+        jsr BlitIcon6x16
 
         LoadW r2, OpenIconRaw
         lda #<ICON2_FRONT
