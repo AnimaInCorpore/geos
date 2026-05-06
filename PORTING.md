@@ -1507,12 +1507,12 @@ Phase 5 prerequisites and disk rule:
 22. Implement P/M graphics cursor rendering (`kernal/sprites/` rewrite)
 23. Connect VBI counter to `kernal/time/` clock routines
 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
-25. Regression-test all graphics, font, menu, dialog, and file operations under PAL jsA8E, then repeat milestone sign-off in Altirra PAL XL and on PAL hardware
+25. Regression-test all graphics, font, menu, dialog, and file operations under PAL jsA8E
 26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80×)
 
 ### Phase 7: Optional cartridge packaging
 27. Create 8 KB cartridge ROM image for $A000–$BFFF; test cold-boot in Altirra **PAL XL** profile
-28. Verify GEOS desktop loads end-to-end from cartridge + floppy; then repeat PAL hardware sign-off
+28. Verify GEOS desktop loads end-to-end from cartridge + floppy; then repeat final sign-off in Altirra PAL XL and on PAL hardware
 
 Step 22 P/M init requirement:
 - Zero GRAFM_W ($D011) alongside GRAFPx during P/M setup. This register controls
