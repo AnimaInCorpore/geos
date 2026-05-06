@@ -18,6 +18,7 @@ ATARIXL_BUILD_DIR = build/atarixl
 PHASE5_STOCK_ATR = $(ATARIXL_BUILD_DIR)/phase5_stock_desktop.atr
 PHASE5_SMOKE_ATR = $(ATARIXL_BUILD_DIR)/phase5_smoke_desktop.atr
 PHASE5_NATIVE_ATR = $(ATARIXL_BUILD_DIR)/phase5_native_desktop.atr
+PHASE5_NATIVE_MENU_ATR = $(ATARIXL_BUILD_DIR)/phase5_native_menu.atr
 
 ifeq ($(VARIANT),atarixl)
 DISK_RESULT = $(ATR_RESULT)
@@ -387,6 +388,15 @@ atarixl-native-desktop-dialog-run:
 	@$(MAKE) atarixl-native-desktop-bootstrap
 	node tools/phase5_desktop_dialog_run.js --native-desktop --disk $(PHASE5_NATIVE_ATR)
 
+atarixl-native-desktop-menu-bootstrap:
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1 -D atarixl_desktop_menu_smoketest=1' build/atarixl/desktop_atari.cvt
+	@PHASE5_CVT="build/atarixl/desktop_atari.cvt"; \
+	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1 -D atarixl_desktop_menu_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex $(PHASE5_NATIVE_MENU_ATR)
+
+atarixl-native-desktop-menu-run:
+	@$(MAKE) atarixl-native-desktop-menu-bootstrap
+	node tools/phase5_desktop_run.js --native-menu --disk $(PHASE5_NATIVE_MENU_ATR)
+
 atarixl-desktop-run:
 	@$(MAKE) atarixl-desktop-bootstrap
 	node tools/phase5_desktop_run.js --disk $(PHASE5_STOCK_ATR)
@@ -546,7 +556,7 @@ $(BUILD_DIR)/input/koalapad.bin: $(BUILD_DIR)/input/koalapad.o $(INPUTCFG) $(DEP
 $(BUILD_DIR)/input/pcanalog.bin: $(BUILD_DIR)/input/pcanalog.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/pcanalog.o -o $@
 
-.PHONY: FORCE all atarixl atarixl-smoketest atarixl-input-smoketest atarixl-disk-smoketest atarixl-desktop-bootstrap atarixl-desktop-smoke-bootstrap atarixl-native-desktop-bootstrap atarixl-native-desktop-run atarixl-native-desktop-dialog-run atarixl-desktop-run atarixl-desktop-smoke-run atarixl-disk-smoketest-matrix atarixl-siov-minimal-test atarixl-siov-bridge-diag regress clean love
+.PHONY: FORCE all atarixl atarixl-smoketest atarixl-input-smoketest atarixl-disk-smoketest atarixl-desktop-bootstrap atarixl-desktop-smoke-bootstrap atarixl-native-desktop-bootstrap atarixl-native-desktop-run atarixl-native-desktop-dialog-run atarixl-native-desktop-menu-bootstrap atarixl-native-desktop-menu-run atarixl-desktop-run atarixl-desktop-smoke-run atarixl-disk-smoketest-matrix atarixl-siov-minimal-test atarixl-siov-bridge-diag regress clean love
 FORCE:
 
 $(BUILD_FLAGS_FILE): Makefile FORCE

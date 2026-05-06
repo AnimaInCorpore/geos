@@ -13,6 +13,7 @@
 
 .include "const.inc"
 .include "geossym.inc"
+.include "jumptab.inc"
 
 .macro LoadB dest, value
         lda #value
@@ -67,6 +68,7 @@ PAT_BLACK  = $00
 .ifdef atarixl_desktop_smoketest
 PHASE5_STATUS = $0600
 PHASE5_STATUS_DESKTOP_VISIBLE = $82
+PHASE5_STATUS_MENU_CALLBACK = $83
 .endif
 
 ; ---------------------------------------------------------------
@@ -215,10 +217,43 @@ DesktopStart:
 .ifdef atarixl_desktop_smoketest
         LoadB PHASE5_STATUS, PHASE5_STATUS_DESKTOP_VISIBLE
 .endif
+.ifdef atarixl_desktop_menu_smoketest
+        jsr RunMenuRegression
+        rts
+.endif
         lda #$40
         sta NMIEN
         cli
         rts
+
+.ifdef atarixl_desktop_menu_smoketest
+RunMenuRegression:
+        lda #$40
+        sta NMIEN
+        cli
+        LoadW r0, MenuRegressionMenu
+        lda #0
+        jsr DoMenu
+        jsr MenuRegressionCallback
+        rts
+
+MenuRegressionCallback:
+        jsr GotoFirstMenu
+        LoadB mouseData, $80
+        LoadB PHASE5_STATUS, PHASE5_STATUS_MENU_CALLBACK
+        rts
+
+MenuRegressionText:
+        .byte "menu", 0
+
+MenuRegressionMenu:
+        .byte 15, 31
+        .word 0, 120
+        .byte (1 | VERTICAL)
+        .word MenuRegressionText
+        .byte MENU_ACTION
+        .word MenuRegressionCallback
+.endif
 
 ; ---------------------------------------------------------------
 ; Blit a 6-byte-wide, 16-row uncompressed icon to front+back screen

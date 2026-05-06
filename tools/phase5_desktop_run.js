@@ -16,6 +16,7 @@
 //   $70 DESK TOP file found and accepted
 //   $80 StartAppl handoff reached
 //   $82 Atari-native desktop is visibly painted
+//   $83 Native menu callback reached
 //   $81 Desktop smoke frame is visible (fallback path, not real DESK TOP app rendering)
 //   $E1 desktop lookup/open path failed (for example missing DESK TOP on disk)
 //
@@ -133,6 +134,7 @@ function parseArgs(argv) {
     postCycles: 0,
     allowSmokeFrame: false,
     nativeDesktop: false,
+    nativeMenu: false,
     screenshotPath: "",
   };
   let diskPathProvided = false;
@@ -206,6 +208,10 @@ function parseArgs(argv) {
       options.nativeDesktop = true;
       continue;
     }
+    if (arg === "--native-menu") {
+      options.nativeMenu = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       console.log(
         "Usage: node tools/phase5_desktop_run.js [options]\n" +
@@ -220,6 +226,7 @@ function parseArgs(argv) {
         "  --post-cycles <count>    Extra cycles before pause/artifacts\n" +
         "  --allow-smoke-frame      Treat $81 smoke-frame fallback as success\n" +
         "  --native-desktop         Require Atari-native visible marker $82\n" +
+        "  --native-menu            Require native menu callback marker $83\n" +
         "  --screenshot <path>      Save a PNG screenshot artifact"
       );
       process.exit(0);
@@ -228,7 +235,9 @@ function parseArgs(argv) {
   }
 
   if (!diskPathProvided) {
-    const defaultDisk = options.nativeDesktop
+    const defaultDisk = options.nativeMenu
+      ? "build/atarixl/phase5_native_menu.atr"
+      : options.nativeDesktop
       ? "build/atarixl/phase5_native_desktop.atr"
       : options.allowSmokeFrame
         ? "build/atarixl/phase5_smoke_desktop.atr"
@@ -262,6 +271,7 @@ function statusLabel(status) {
     case 0x70: return "DESKTOP_FOUND";
     case 0x80: return "START_APPL";
     case 0x82: return "NATIVE_DESKTOP_VISIBLE";
+    case 0x83: return "MENU_CALLBACK";
     case 0x81: return "SMOKE_FRAME_VISIBLE";
     case 0xe1: return "DESKTOP_LOAD_FAILED";
     case 0xe2: return "OPEN_DISK_FAILED";
@@ -351,7 +361,7 @@ function initRamTouchesFontPointers(bytes) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (options.nativeDesktop && options.postCycles === 0) {
+  if ((options.nativeDesktop || options.nativeMenu) && options.postCycles === 0) {
     options.postCycles = 20_000_000;
   }
 
@@ -595,7 +605,11 @@ async function main() {
         decisive = true;
         break;
       }
-      if (options.nativeDesktop && status === 0x82) {
+      if (options.nativeDesktop && !options.nativeMenu && status === 0x82) {
+        decisive = true;
+        break;
+      }
+      if (options.nativeMenu && status === 0x83) {
         decisive = true;
         break;
       }
@@ -988,15 +1002,26 @@ async function main() {
       }
     }
     if (status === 0x82) {
-      if (!options.nativeDesktop) {
+      if (options.nativeMenu) {
+        console.log("Native desktop is visible; waiting for menu callback $83.");
+      } else if (!options.nativeDesktop) {
         console.log("Reached native-desktop visible marker ($82) without --native-desktop.");
         process.exit(1);
       }
-      console.log("Bootstrap reached visible Atari-native desktop.");
+      if (options.nativeDesktop) {
+        console.log("Bootstrap reached visible Atari-native desktop.");
+      }
+    }
+    if (status === 0x83) {
+      if (!options.nativeMenu) {
+        console.log("Reached menu callback marker ($83) without --native-menu.");
+        process.exit(1);
+      }
+      console.log("Bootstrap reached native menu callback marker.");
     }
     if (status === 0x80) {
       console.log("Bootstrap reached desktop handoff status.");
-      if (options.nativeDesktop) {
+      if (options.nativeDesktop && !options.nativeMenu) {
         console.log("Native Atari desktop handoff is not enough; expected visible marker $82.");
         process.exit(1);
       }
