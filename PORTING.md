@@ -7,6 +7,10 @@ an optional later cartridge boot phase).
 First-release target platform: **PAL Atari 800 XL**. Treat PAL as the only
 release gate for version 1. NTSC behavior is useful to keep architecturally possible,
 but it is a follow-up compatibility phase after the PAL baseline is stable.
+PAL sign-off means a stock, matched PAL ANTIC + PAL GTIA Atari 800 XL profile.
+`PAL_R` identifies the GTIA variant only; on emulator and hardware sign-off runs,
+also confirm PAL ANTIC frame timing with `VCOUNT`/frame-rate evidence so a mixed
+PAL/NTSC machine is not accepted accidentally.
 
 Both platforms share a 6502-family CPU, so pure arithmetic/logic code, most process
 scheduling code, and most file-format logic are directly reusable. The graphics stack
@@ -21,14 +25,14 @@ interrupts, and memory mapping.
 
 | Feature        | C64                           | Atari 800 XL                       |
 |----------------|-------------------------------|-------------------------------------|
-| CPU            | 6510 @ ~1 MHz (PAL ~0.985 MHz)| 6502C (SALLY) @ ~1.773 MHz (PAL first target); ~1.790 MHz NTSC later |
+| CPU            | 6510 @ ~1 MHz (PAL ~0.985 MHz)| 6502C (SALLY) @ ~1.773447 MHz (PAL first target); ~1.789773 MHz NTSC later |
 | CPU I/O port   | $00/$01 (memory banking)      | Not present (normal RAM at $00/$01) |
 | Video          | VIC-II ($D000–$D02F)          | ANTIC ($D400) + GTIA ($D000)        |
 | Audio/kbd I/O  | SID ($D400), CIA1 ($DC00)     | POKEY ($D200), PIA ($D300)          |
 | Joystick       | CIA1 Port B ($DC01)           | PIA Port A ($D300)                  |
 | Mouse/paddle   | SID potentiometers ($D419/1A) | POKEY paddle inputs (POT0/POT1)     |
 | Serial/disk    | IEC bus via CIA2 ($DD00)      | SIO bus via POKEY                   |
-| Timer/VBlank   | CIA1 60 Hz IRQ                | ANTIC VBI NMI (50 Hz PAL target; 60 Hz NTSC later) |
+| Timer/VBlank   | CIA1 60 Hz IRQ                | ANTIC VBI NMI (PAL target: nominal 50 Hz, actual ~49.86074 Hz; 60 Hz NTSC later) |
 | Hardware sprites | VIC-II (8 sprites)          | GTIA Players & Missiles (4+4)       |
 | ROM layout     | BASIC $A000, KERNAL $E000     | OS $C000–$FFFF (disableable)        |
 | I/O area       | $D000–$DFFF                   | $D000–$D7FF only                    |
@@ -112,6 +116,15 @@ default: $FF, all bits high):
 | 1   | 1     | RAM visible at $A000–$BFFF |
 | 7   | 0     | Self-test ROM visible at $5000–$57FF (only when OS ROM is active) |
 | 7   | 1     | RAM visible at $5000–$57FF |
+
+`PORTB` is controlled through the PIA, not a 6510-style CPU I/O port. Before any
+real-hardware ROM-bank write, make sure `PBCTL` selects PORTB data-register access
+(bit 2 set) and that the PORTB DDR has bits 0, 1, and 7 configured as outputs. The
+XL OS normally initializes this, but boot stubs and SIO bridges must tolerate a dirty
+PIA state. A safe low-level setup is: `PBCTL=$38`, write DDRB with the required output
+bits (usually `$FF` on a stock 64K XL), then `PBCTL=$3C` before read-modify-write
+updates to `PORTB`. Preserve bits 2-6 unless the code is intentionally controlling
+XL/XE extended-memory hardware.
 
 Tested operation masks (read-modify-write to preserve other bits):
 
@@ -259,7 +272,7 @@ COLPM2  = $D014
 COLPM3  = $D015
 COLPF0  = $D016   ; Playfield color 0
 COLPF1  = $D017
-COLPF2  = $D018   ; Playfield color 2 — foreground pixel color in mode $0F
+COLPF2  = $D018   ; Playfield color 2 — hue + clear-bit luminance in mode $0F
 COLPF3  = $D019
 COLBK   = $D01A   ; Background color
 PRIOR   = $D01B   ; Priority control
@@ -572,6 +585,11 @@ ANTIC mode $0F with a custom display list can render 200 scan lines into the ove
 area, matching the C64's 320×200 bitmap exactly. Standard NTSC/PAL televisions handle
 200 lines without issue, so GEOS Y-coordinate limits can stay 0–199.
 
+Display-list placement constraint: the display list itself cannot cross a 1 KB
+boundary. Keep `atari_dlist` wholly inside one `$xx00-$xx3FF`/`$xx400-$xx7FF`/
+`$xx800-$xxBFF`/`$xxC00-$xxFFF` window, and verify this in the linker map or with an
+assembler assertion. This is separate from the playfield bitmap's 4 KB DMA boundary.
+
 Critical ANTIC constraint: ANTIC's DMA address counter cannot naturally cross a 4 KB
 boundary while fetching mode-$0F data. A single LMS at `$4000` will corrupt the display
 once the fetch stream reaches `$4FFF`. The display list must insert a new LMS at the
@@ -628,6 +646,12 @@ Initialization:
 
 Do not switch to wide playfield (`DMACTL` low bits = `11`) unless you intentionally
 target overscan width; normal width (`10`) is the canonical 320-pixel mode-$0F setup.
+
+Mode `$0F` color polarity must be chosen intentionally. In Atari high-resolution
+mode, set bits use the PF1 luminance with the PF2 hue, while clear bits use the PF2
+luminance. GEOS-style black-on-white therefore usually means `COLPF1=$00` and
+`COLPF2=$0F`; reversing those values produces white ink on dark paper. Do not treat
+`COLPF2` as a simple foreground color the way a C64 bitmap/color-RAM path might.
 
 ### 6.3 Rewrite: VBI/IRQ Handler
 
@@ -1093,13 +1117,15 @@ through a low-RAM trampoline that temporarily banks OS ROM in, executes `jsr SIO
 then banks OS ROM out again:
 
 1. Enter critical section (`DISABLE_NMI`).
-2. Save current `PORTB` and `NMIEN`.
-3. Save the Atari OS vector range `$0200–$0225` into a GEOS-owned buffer, then restore the original Atari OS vectors from a cold-boot snapshot. This is critical because the OS VBI handler must run (using OS vectors) while the OS ROM is banked in, but it must not jump to the RAM-based GEOS VBI vector (`$0224`) which is hidden/inaccessible.
-4. Bank in the OS call window with `PORTB` bits 0/1/7 forced high so OS ROM is visible while BASIC and self-test stay hidden.
-5. Enable the VBI NMI (`lda #$40` / `sta NMIEN`) so the OS VBI handler can update system timers (`RTCLOK`, `CDTMV*`) that `SIOV` relies on for timeouts.
-6. Call `SIOV`.
-7. Disable NMI (`lda #$00` / `sta NMIEN`), restore the saved GEOS vectors to `$0200–$0225`, and restore the saved `PORTB` and `NMIEN`.
-8. Exit critical section (`ENABLE_NMI`).
+2. Save current `PBCTL`, `PORTB`, `NMIEN`, and the POKEY serial-control shadow (`SSKCTL`, `$0232`).
+3. Force `PBCTL=$3C` before writing `PORTB`, so the write updates the PORTB data latch rather than the DDR.
+4. Save the Atari OS vector range `$0200–$0225` and the top CPU vector range `$FFFA–$FFFF` into GEOS-owned buffers, then restore the original Atari OS vectors from a cold-boot snapshot. This is critical because the OS VBI/IRQ handlers must run while the OS ROM is banked in, but they must not jump through RAM-based GEOS vectors.
+5. Bank in the OS call window with `savedPORTB | $83` so OS ROM is visible while BASIC and self-test stay hidden, and so unrelated PORTB bits are preserved.
+6. Reset and restore SKCTL/SSKCTL around the call if a previous transaction could have left POKEY serial state dirty.
+7. Enable the VBI NMI (`lda #$40` / `sta NMIEN`) only after the OS-safe vectors are installed. The OS VBI handler must update system timers (`RTCLOK`, `CDTMV*`) that `SIOV` relies on for timeouts.
+8. Call `SIOV`.
+9. Disable NMI (`lda #$00` / `sta NMIEN`), restore the saved GEOS vectors to `$0200–$0225` and `$FFFA–$FFFF`, restore `PORTB` while `PBCTL` is still in data-register mode, then restore the saved `PBCTL` and `NMIEN`.
+10. Exit critical section (`ENABLE_NMI`).
 
 Important: this wrapper must run from RAM below `$C000` (for example `$3E00`),
 because enabling OS ROM overlays `$C000–$FFFF` where GEOS KERNAL code normally runs.
@@ -1114,13 +1140,18 @@ SIOBridgeRam:
     sei
     lda NMIEN
     sta savedNmiEn
+    lda PBCTL
+    sta savedPbCtl
+    lda #$3C
+    sta PBCTL        ; make PORTB writes target the data register
     lda PORTB
     sta savedPortB
     
     ; Bank OS ROM in
     lda #$00
     sta NMIEN       ; stop NMIs while swapping vectors
-    ora #$83        ; OS ROM on, BASIC off, self-test off
+    lda savedPortB
+    ora #$83        ; OS ROM on, BASIC off, self-test off; preserve other bits
     sta PORTB
     
     ; Restore OS vectors for SIO/VBI use
@@ -1154,6 +1185,8 @@ SIOBridgeRam:
     
     lda savedPortB
     sta PORTB
+    lda savedPbCtl
+    sta PBCTL
     lda savedNmiEn
     sta NMIEN
     ldy savedY
@@ -1330,6 +1363,9 @@ C64 uses CIA1 hardware timers for the frame tick and wall clock. On Atari:
 
 Adapt `kernal/time/` to read from this VBI counter instead of CIA1. The rest of the
 time-keeping logic (alarm scheduling, process timers) is unchanged.
+For version 1 scheduling, treating PAL as 50 nominal ticks/second is acceptable, but
+hardware-facing timing and clock polish in step 26 should account for the actual PAL
+ANTIC frame rate (~49.86074 Hz) if long-running wall-clock accuracy matters.
 
 ### 6.10 Modules Reusable Without Change
 
@@ -1458,7 +1494,7 @@ Phase 4 gate before considering step 17 done:
 Phase 5 prerequisites and disk rule:
 - Do not start ROM-disable desktop work until Phase 4 disk I/O succeeds end-to-end in the PAL jsA8E matrix with OS ROM enabled. Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary iteration path for faster, deterministic smoke runs — no browser or HTTP server needed. Fall back to the browser path only for visual inspection or when a problem does not reproduce headless.
 - Keep disk I/O on OS `SIOV` via a low-RAM ROM-banking trampoline. Reuse the Phase 4 staging/copy-under-ROM path and do not block Phase 5 on raw POKEY SIO.
-- If a raw-SIO optimisation path is prototyped in Phase 5 or later, calculate the POKEY baud-rate divisor against the **PAL clock (~1.773 MHz)**, not the NTSC figure (~1.790 MHz). Standard Atari SIO at 19,200 baud: `divisor = (1,773,000 / (2 × 19,200)) − 7 ≈ 39`. Using the NTSC divisor (~40) on PAL hardware shifts the baud rate by ~1%, which is within tolerance for most drives but will cause framing errors on marginal hardware.
+- If a raw-SIO optimisation path is prototyped in Phase 5 or later, calculate the POKEY baud-rate divisor against the **PAL clock (~1.773447 MHz)**, not the NTSC figure (~1.789773 MHz). Standard Atari SIO at 19,200 baud: `divisor = (1,773,447 / (2 × 19,200)) − 7 ≈ 39`. Using the NTSC divisor (~40) on PAL hardware shifts the baud rate by ~1%, which is within tolerance for most drives but will cause framing errors on marginal hardware.
 - A "desktop smoke frame" (for example a kernel-rendered placeholder reached after `GetFile("DESK TOP")`) is useful for bootstrap diagnostics only and does **not** satisfy step 21. Step 21 requires the Atari-native desktop application path to execute and render correctly on the PAL jsA8E profile. Stock C64 `DESK TOP` launch evidence proves only disk/bootstrap flow until that application is ported or replaced.
 - Current repository scope includes Atari-ported KERNAL sources plus a minimal
   Atari-native `DESK TOP` application in `apps/desktop_atari.s`. That native app is
@@ -1484,12 +1520,12 @@ Step 22 P/M init requirement:
   will appear on screen if it is not explicitly cleared before P/M DMA is enabled.
 
 Step 24 implementation requirement:
-- Poll ST mouse quadrature using ANTIC DLIs (~300–500 Hz by placing DLI on selected scanlines), then apply accumulated deltas in the VBI. Version 1 tuning is PAL 50 Hz; if the code is intended to survive NTSC later, read the VBI rate from `vbiHz` instead of embedding the frame rate.
+- Poll ST mouse quadrature using ANTIC DLIs (~300–500 Hz by placing DLI on selected scanlines), then apply accumulated deltas in the VBI. A VBI-rate-only ST mouse reader can prove the decode path, but it is not enough for PAL hardware release sign-off because fast movement will drop quadrature transitions. Version 1 tuning is PAL 50 Hz nominal; if the code is intended to survive NTSC later, read the VBI rate from `vbiHz` instead of embedding the frame rate.
 
 Step 26 timing requirement:
-- Use **~1.773 MHz** as the PAL CPU clock for all delay loop calibration — not 1.79 MHz (that is the NTSC figure). The ratio against a PAL C64 (~0.985 MHz) is ~1.80×, not 1.79×.
+- Use **~1.773447 MHz** as the PAL CPU clock for all delay loop calibration — not 1.79 MHz (that is the NTSC figure). The ratio against a PAL C64 (~0.985 MHz) is ~1.80×, not 1.79×.
 - Calibrate delays with ANTIC/P-M DMA enabled; effective CPU throughput is lower during active display than during VBI due to DMA cycle stealing.
-- Version 1 constants may be calibrated for PAL 50 Hz, but any timing path advertised as PAL/NTSC-compatible must load `vbiHz` at runtime rather than assume 50.
+- Version 1 constants may be calibrated for PAL 50 Hz nominal timing, but any timing path advertised as PAL/NTSC-compatible must load `vbiHz` at runtime rather than assume 50. Long-running PAL wall-clock code should either tolerate the actual ~49.86074 Hz frame rate or use a fractional accumulator.
 
 Phase 6 regression note:
 - Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary regression capture path (screenshots, traces, failure bundles, and scripted input) across Phases 2-4 smoke binaries and selected cartridge/ROM-off bring-up binaries. Fall back to the browser path only for live visual inspection. Then repeat milestone sign-off in Altirra and on PAL hardware where required.
@@ -1514,9 +1550,18 @@ out of `$A000–$BFFF`.
 rewritten for the Atari layout.
 
 **ANTIC 4 KB DMA boundary.** A mode-$0F scanline fetch cannot naturally cross
-`$xFFF -> $x000`. With a bitmap starting at `$4000`, line 102 ends at `$4FEF`, so
-line 103 must begin at `$5000` via a new LMS instruction. Keep the `$4FF0–$4FFF`
-gap unused and encode the jump in the scanline LUT.
+`$xFFF -> $x000`. With a bitmap starting at `$4000`, zero-based line 101 ends at
+`$4FEF`, so zero-based line 102 must begin at `$5000` via a new LMS instruction. Keep
+the `$4FF0–$4FFF` gap unused and encode the jump in the scanline LUT.
+
+**ANTIC display-list 1 KB boundary.** The display list program itself cannot cross a
+1 KB address boundary, even if the bitmap data is split correctly. Keep `atari_dlist`
+inside one 1 KB window and fail the build or review the linker map if it moves.
+
+**Mode-F color polarity.** Atari high-resolution mode is not a C64-style independent
+foreground/background bitmap. Set bits use PF1 luminance, clear bits use PF2
+luminance, and both derive hue from PF2. Verify the intended black-on-white or
+white-on-black GEOS polarity before treating graphics screenshots as correct.
 
 **OS ROM disable ordering.** The disable must be performed by a stub already in RAM
 before the switch. Verify that no interrupt can fire between copying the stub and
@@ -1553,8 +1598,10 @@ rewrite. Use the ROM-banked `SIOV` bridge first (running from RAM below `$C000`)
 then add raw/high-speed SIO later as an optimization.
 
 **Banked SIOV vector window.** While OS ROM is temporarily banked in for `SIOV`,
-`$FFFA–$FFFF` are OS vectors. Keep VBI NMI masked for that whole window (or use a
-temporary low-RAM `RTI` NMI stub) to avoid dispatching into unexpected handlers.
+`$0200-$0225` and `$FFFA-$FFFF` must contain OS-safe vectors before VBI is re-enabled.
+Do not keep VBI masked through the entire `SIOV` call: the OS depends on VBI timer
+maintenance for serial timeouts. Instead, mask NMI while swapping vectors/banks,
+enable VBI only for the `SIOV` call, then mask it again before restoring GEOS vectors.
 
 **Sector abstraction in the disk driver.** Do not change the GEOS 256-byte logical
 block size or the meaning of the 254-byte payload values used in `kernal/files/`.
@@ -1586,10 +1633,15 @@ for SD (810) and 1040 sectors for ED (1050) in both `drv/drv1050.s` and
 `tools/atari_geos_disk.py`.
 
 **PAL CPU clock vs NTSC.** The PAL Atari 800 XL CPU (6502C/SALLY) runs at
-**~1.773 MHz** — derived from the PAL master clock (~14.188 MHz / 8). NTSC systems
-run at ~1.790 MHz. All cycle-counted delays and timer constants must use the PAL
+**~1.773447 MHz** — derived from the PAL master clock (~14.18757 MHz / 8). NTSC systems
+run at ~1.789773 MHz. All cycle-counted delays and timer constants must use the PAL
 figure. The ~1% difference is small but matters for SIO baud-rate divisors on
 marginal drives and for any hand-tuned delay loops.
+
+**PAL GTIA vs PAL ANTIC evidence.** `PAL_R` distinguishes PAL/NTSC GTIA values
+($01 vs $0F in practice), but the frame cadence is controlled by ANTIC. For a stock
+PAL 800 XL this should match, but hardware sign-off should also confirm PAL VCOUNT
+range/frame rate so a mixed-board machine does not slip through.
 
 **PAL vs NTSC runtime detection.** `DetectVideoStandard` in `start_atari.s` reads
 `PAL_R` ($D014, GTIA read-only) at boot and writes `vbiHz`/`videoStd` into RAM.
@@ -1608,9 +1660,9 @@ review to keep explicitly on the porting backlog:
   `_InvertLine`, `_RecoverLine`, `ImprintLine`, `BitmapUp` / `BitmapClip`, and font
   blitters under `kernal/fonts/`. Any `_GetScanLine` + masked-`x` byte-offset pattern
   must be treated as suspect on Atari.
-- **SIO restore ordering in `drv1050.s`.** Restore `PBCTL` before `PORTB`, then restore
-  `NMIEN`, so the PORTB write executes with the correct port control state on XL
-  hardware.
+- **SIO restore ordering in `drv1050.s`.** Keep `PBCTL` in data-register mode while
+  restoring `PORTB`, then restore the saved `PBCTL`, then restore `NMIEN`. This ensures
+  the PORTB write updates the output latch rather than the DDR on XL hardware.
 - **SIO retry policy.** Add retry handling for recoverable Atari SIO errors (at minimum
   `$8A`, `$8B`, `$8C`) instead of failing immediately on the first error status.
 - **OS shadow-register rule.** In OS-assisted phases, document and follow shadow writes
