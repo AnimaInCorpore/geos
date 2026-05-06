@@ -5,6 +5,8 @@
 // This expects a non-smoke phase 5 desktop bootstrap build. The stock smoke
 // build intentionally bypasses the desktop loader dialog, so this script uses
 // the regular EnterDeskTop path to prove DoDlgBox + keyboard dismissal.
+// The --native-desktop mode instead patches the Atari-native desktop into a
+// dialog trampoline once the visible desktop marker is reached.
 //
 // Flow:
 //   1. Boot phase5_desktop_bootstrap.xex to its $0881 entry breakpoint.
@@ -40,6 +42,13 @@ const DEFAULT_DISMISSED_SCREENSHOT = path.resolve(
   REPO_ROOT,
   "build/atarixl/phase5_dialog_dismissed.png",
 );
+const PHASE5_STATUS = 0x0600;
+const PHASE5_STATUS_DESKTOP_VISIBLE = 0x82;
+const NATIVE_DESKTOP_START = 0x0400;
+const NATIVE_DIALOG_TRAMPOLINE = 0x0700;
+const GEOS_ZP_OFFSET = 0x7e;
+const ZP_R0 = 0x02 + GEOS_ZP_OFFSET;
+const ZP_R0H = ZP_R0 + 1;
 
 function resolveInputPath(rawPath) {
   if (!rawPath) return rawPath;
@@ -61,6 +70,7 @@ function parseArgs(argv) {
     diskPath: resolveInputPath("build/atarixl/geos.atr"),
     osPath: resolveInputPath("third_party/A8E/ATARIXL.ROM"),
     basicPath: resolveInputPath("third_party/A8E/ATARIBAS.ROM"),
+    nativeDesktop: false,
     bootTimeoutMs: DEFAULT_BOOT_TIMEOUT_MS,
     dialogTimeoutMs: DEFAULT_DIALOG_TIMEOUT_MS,
     returnDelayMs: DEFAULT_RETURN_DELAY_MS,
@@ -128,6 +138,10 @@ function parseArgs(argv) {
       options.dismissedScreenshotPath = resolveInputPath(argv[i]);
       continue;
     }
+    if (arg === "--native-desktop") {
+      options.nativeDesktop = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       console.log(
         "Usage: node tools/phase5_desktop_dialog_run.js [options]\n" +
@@ -142,7 +156,8 @@ function parseArgs(argv) {
         "  --visible-screenshot <path>\n" +
         "                           Screenshot after the dialog appears\n" +
         "  --dismissed-screenshot <path>\n" +
-        "                           Screenshot after the dialog is dismissed"
+        "                           Screenshot after the dialog is dismissed\n" +
+        "  --native-desktop         Use the native Atari desktop trampoline dialog mode"
       );
       process.exit(0);
     }
@@ -208,6 +223,120 @@ async function captureScreenshot(api, outputPath) {
   };
 }
 
+async function readBytes(api, addr, count) {
+  const bytes = [];
+  for (let i = 0; i < count; i++) {
+    bytes.push(await api.debug.readMemory((addr + i) & 0xffff));
+  }
+  return bytes;
+}
+
+async function runNativeDesktopDialog(api, options, doDlgBox, mainLoop) {
+  console.log("Waiting for native desktop visible marker at $" + hex4(PHASE5_STATUS) + "...");
+  await api.debug.setBreakpoints([]);
+  await api.system.start();
+  let status = 0;
+  let desktopStartOriginal = null;
+  for (let chunks = 0; chunks < 500; chunks++) {
+    await api.system.waitForCycles({ count: 20_000 });
+    status = await api.debug.readMemory(PHASE5_STATUS);
+    if (status >= PHASE5_STATUS_DESKTOP_VISIBLE) {
+      break;
+    }
+  }
+  if (status < PHASE5_STATUS_DESKTOP_VISIBLE) {
+    console.error("FATAL: native desktop did not reach visible status $82.");
+    process.exit(2);
+  }
+  console.log("Native desktop visible: PHASE5_STATUS=$" + hex2(status));
+
+  await api.system.pause();
+  desktopStartOriginal = await readBytes(api, NATIVE_DESKTOP_START, 3);
+  const dialogTrampoline = Uint8Array.from([
+    0xA9, 0xFC,       // lda #<_EnterDT_DB
+    0x85, ZP_R0,      // sta r0
+    0xA9, 0xC3,       // lda #>_EnterDT_DB
+    0x85, ZP_R0H,     // sta r0+1
+    0x4C, 0x56, 0xC2, // jmp DoDlgBox
+  ]);
+
+  await api.debug.writeRange(NATIVE_DIALOG_TRAMPOLINE, dialogTrampoline);
+  await api.debug.writeRange(NATIVE_DESKTOP_START, Uint8Array.from([0x4C, 0x00, 0x07]));
+  console.log(
+    "Patched DesktopStart @$" + hex4(NATIVE_DESKTOP_START) +
+      " to jump to dialog trampoline @$" + hex4(NATIVE_DIALOG_TRAMPOLINE),
+  );
+
+  try {
+    console.log("Waiting for DoDlgBox at $" + hex4(doDlgBox) + "...");
+    await api.debug.setBreakpoints([doDlgBox]);
+    await api.system.start();
+    const dlgEntry = await api.debug.waitForBreakpoint({ timeoutMs: options.dialogTimeoutMs });
+    if (isFailureArtifact(dlgEntry) || !dlgEntry || !dlgEntry.debugState) {
+      console.error("FATAL: native desktop did not reach DoDlgBox.");
+      if (dlgEntry && dlgEntry.failure) {
+        console.error(JSON.stringify(dlgEntry.failure, null, 2));
+      }
+      process.exit(2);
+    }
+    console.log("DoDlgBox entered: " + formatState(dlgEntry.debugState));
+
+    await api.debug.writeRange(NATIVE_DESKTOP_START, desktopStartOriginal);
+    console.log("Restored DesktopStart entry bytes after dialog launch.");
+
+    console.log("Waiting for dialog MainLoop at $" + hex4(mainLoop) + "...");
+    await api.debug.setBreakpoints([mainLoop]);
+    await api.system.start();
+    const dlgLoop = await api.debug.waitForBreakpoint({ timeoutMs: options.dialogTimeoutMs });
+    if (isFailureArtifact(dlgLoop) || !dlgLoop || !dlgLoop.debugState) {
+      console.error("FATAL: native dialog did not reach MainLoop.");
+      if (dlgLoop && dlgLoop.failure) {
+        console.error(JSON.stringify(dlgLoop.failure, null, 2));
+      }
+      process.exit(2);
+    }
+    console.log("Dialog loop reached: " + formatState(dlgLoop.debugState));
+
+    const visibleShot = await captureScreenshot(api, options.visibleScreenshotPath);
+    console.log(
+      "Saved dialog-visible screenshot: " +
+        visibleShot.path +
+        " (" +
+        visibleShot.width +
+        "x" +
+        visibleShot.height +
+        ", " +
+        visibleShot.byteLength +
+        " bytes)",
+    );
+
+    console.log("Dismiss dialog with Return, then allow a redraw.");
+    await api.debug.setBreakpoints([]);
+    await api.system.start();
+    await api.system.waitForTime({ ms: options.returnDelayMs, clock: "real" });
+    await api.input.tapKey("Return", { holdMs: "80ms", afterMs: "40ms" });
+    await api.system.waitForCycles({ count: 1_000_000 });
+
+    const dismissedShot = await captureScreenshot(api, options.dismissedScreenshotPath);
+    console.log(
+      "Saved post-dismissal screenshot: " +
+        dismissedShot.path +
+        " (" +
+        dismissedShot.width +
+        "x" +
+        dismissedShot.height +
+        ", " +
+        dismissedShot.byteLength +
+        " bytes)",
+    );
+  } finally {
+    if (desktopStartOriginal) {
+      await api.debug.writeRange(NATIVE_DESKTOP_START, desktopStartOriginal);
+    }
+    await api.debug.setBreakpoints([]);
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const symbols = loadLabSymbols(LAB_PATH);
@@ -263,6 +392,11 @@ async function main() {
 
     await api.media.mountDisk(diskData, { name: path.basename(options.diskPath), slot: 0 });
     console.log("Mounted " + path.basename(options.diskPath) + " as D1:");
+
+    if (options.nativeDesktop) {
+      await runNativeDesktopDialog(api, options, doDlgBox, mainLoop);
+      process.exit(0);
+    }
 
     console.log("Waiting for DoDlgBox at $" + hex4(doDlgBox) + "...");
     await api.debug.setBreakpoints([doDlgBox]);

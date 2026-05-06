@@ -379,6 +379,10 @@ atarixl-native-desktop-run:
 	@$(MAKE) atarixl-native-desktop-bootstrap
 	node tools/phase5_desktop_run.js --native-desktop
 
+atarixl-native-desktop-dialog-run:
+	@$(MAKE) atarixl-native-desktop-bootstrap
+	node tools/phase5_desktop_dialog_run.js --native-desktop
+
 atarixl-desktop-run:
 	@$(MAKE) atarixl-desktop-bootstrap
 	node tools/phase5_desktop_run.js
