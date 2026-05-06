@@ -322,6 +322,15 @@ _DrawPoint:
 .ifdef bsw128
 	bbsf 7, graphMode, DrwPoi80
 .endif
+.ifdef atarixl
+	lda r3H
+	lsr
+	lda r3L
+	ror
+	lsr
+	lsr
+	tay
+.else
 	lda r3L
 	and #%11111000
 	tay
@@ -329,7 +338,9 @@ _DrawPoint:
 	beq @1
 	inc r5H
 	inc r6H
-@1:	lda r3L
+@1:
+.endif
+	lda r3L
 	and #%00000111
 	tax
 	lda BitMaskPow2Rev,x
@@ -399,13 +410,24 @@ _TestPoint:
 .ifdef bsw128
 	bbsf 7, graphMode, TestPoi80
 .endif
+.ifdef atarixl
+	lda r3H
+	lsr
+	lda r3L
+	ror
+	lsr
+	lsr
+	tay
+.else
 	lda r3L
 	and #%11111000
 	tay
 	lda r3H
 	beq @1
 	inc r6H
-@1:	lda r3L
+@1:
+.endif
+	lda r3L
 	and #%00000111
 	tax
 	lda BitMaskPow2Rev,x

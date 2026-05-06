@@ -1547,7 +1547,7 @@ out of `$A000–$BFFF`.
 **Framebuffer layout mismatch.** C64 bitmap-address math is VIC-II tiled
 (`(y>>3)*320 + (x>>3)*8 + (y&7)`), but Atari mode `$0F` is linear
 (`y*40 + (x>>3)`). Any graphics/font routine that computes screen addresses must be
-rewritten for the Atari layout.
+rewritten for the Atari layout. (Update: Point plotting in `kernal/graph/point.s` and base `HorizontalLine`/`Rectangle` primitives have been successfully ported, but other graphics routines still need auditing).
 
 **ANTIC 4 KB DMA boundary.** A mode-$0F scanline fetch cannot naturally cross
 `$xFFF -> $x000`. With a bitmap starting at `$4000`, zero-based line 101 ends at

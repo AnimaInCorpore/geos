@@ -19,7 +19,7 @@
 .global AtariBackRowBaseHi
 .global atari_dlist
 
-BITMAP_LMS0 = BITMAP_BASE
+BITMAP_LMS0 = BITMAP_BASE + 16
 BITMAP_LMS1 = BITMAP_BASE + $1000
 
 .segment "hw_atari"
@@ -120,32 +120,24 @@ atari_dlist:
 		.byte $0f
 	.endrepeat
 	.byte $8f
-	.repeat 24
-		.byte $0f
-	.endrepeat
-	.byte $8f
-	.repeat 24
+	.repeat 26
 		.byte $0f
 	.endrepeat
 	.byte $cf
 	.word BITMAP_LMS1
-	.repeat 19
+	.repeat 24
 		.byte $0f
 	.endrepeat
 	.byte $8f
-	.repeat 19
+	.repeat 24
 		.byte $0f
 	.endrepeat
 	.byte $8f
-	.repeat 19
+	.repeat 24
 		.byte $0f
 	.endrepeat
 	.byte $8f
-	.repeat 19
-		.byte $0f
-	.endrepeat
-	.byte $8f
-	.repeat 18
+	.repeat 22
 		.byte $0f
 	.endrepeat
 	.byte $41

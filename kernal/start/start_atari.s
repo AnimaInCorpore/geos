@@ -1680,7 +1680,7 @@ FillPages:
 phase2_smoke_dlist:
 	.byte $70, $70, $70
 	.byte $4f
-	.word BITMAP_BASE
+	.word BITMAP_BASE + 16
 	.repeat 101
 		.byte $0f
 	.endrepeat

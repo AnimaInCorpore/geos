@@ -126,7 +126,6 @@ _NMIHandler:
 	pha
 	tya
 	pha
-	jsr MaintainAtariDisplay
 .if .defined(mse_stmouse)
 	jsr AtariMouseSample
 .endif

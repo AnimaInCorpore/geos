@@ -34,14 +34,14 @@ _DoKeyboardScan:
 	and #$3f
 	tax
 	lda AtariKbdMap,x
-	bbrf 6, r0L, @haveChar      ; bit6 set: shifted variant
+	bbsf 6, r0L, @haveChar      ; bit6 clear: shifted variant (active low)
 	lda AtariKbdShiftMap,x
 @haveChar:
 	cmp #KEY_INVALID
 	beq @clearRepeat
 
 	; Keep C64-style control behavior: set bit 7 on printable chars.
-	bbrf 7, r0L, @haveFinalChar
+	bbsf 7, r0L, @haveFinalChar ; bit7 clear: control pressed (active low)
 	cmp #$20
 	bcc @haveFinalChar
 	ora #$80
