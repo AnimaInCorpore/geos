@@ -246,7 +246,7 @@
 
     logLine("Phase 2 paused state: " + formatState(pausedState));
     return {
-      badge: waitResult.ok ? "Ready" : "Paused",
+      badge: didWaitSucceed(waitResult) ? "Ready" : "Paused",
       summary: [
         "Booted " + scenario.xexPath,
         "Captured the static display harness after the bitmap settled.",
@@ -273,21 +273,61 @@
     }
     await api.debug.setBreakpoints([]);
     await api.system.start();
-    await api.system.waitForTime({ ms: 450, clock: "real" });
 
     const screenshots = [];
+    const baselineWait = await api.system.waitForTime({ ms: 450, clock: "real" });
+    if (!didWaitSucceed(baselineWait)) {
+      return buildPhase3WaitFailureResult(
+        api,
+        scenario,
+        "baseline wait",
+        baselineWait,
+        screenshots,
+        "The input smoke harness did not stay running long enough to capture the baseline frame.",
+      );
+    }
     screenshots.push(await captureScreenshot(api, "phase3-baseline"));
     logLine("Captured baseline input frame");
 
     await api.input.setJoystick({ right: true });
-    await api.system.waitForTime({ ms: 320, clock: "real" });
+    const joystickWait = await api.system.waitForTime({ ms: 320, clock: "real" });
+    if (!didWaitSucceed(joystickWait)) {
+      return buildPhase3WaitFailureResult(
+        api,
+        scenario,
+        "joystick wait",
+        joystickWait,
+        screenshots,
+        "The input smoke harness stopped before the joystick frame could be captured.",
+      );
+    }
     await api.input.releaseAllInputs();
-    await api.system.waitForTime({ ms: 160, clock: "real" });
+    const releaseWait = await api.system.waitForTime({ ms: 160, clock: "real" });
+    if (!didWaitSucceed(releaseWait)) {
+      return buildPhase3WaitFailureResult(
+        api,
+        scenario,
+        "post-release wait",
+        releaseWait,
+        screenshots,
+        "The input smoke harness stopped before the post-release frame could be captured.",
+      );
+    }
     screenshots.push(await captureScreenshot(api, "phase3-joystick"));
     logLine("Captured joystick-injected frame");
 
     await api.input.tapKey({ key: "a", code: "KeyA" }, { afterMs: 120 });
-    await api.system.waitForTime({ ms: 180, clock: "real" });
+    const keyboardWait = await api.system.waitForTime({ ms: 180, clock: "real" });
+    if (!didWaitSucceed(keyboardWait)) {
+      return buildPhase3WaitFailureResult(
+        api,
+        scenario,
+        "keyboard wait",
+        keyboardWait,
+        screenshots,
+        "The input smoke harness stopped before the keyboard frame could be captured.",
+      );
+    }
     screenshots.push(await captureScreenshot(api, "phase3-keyboard"));
     logLine("Captured keyboard-injected frame");
 
@@ -366,7 +406,7 @@
     logLine("Phase 4 paused state: " + formatState(pausedState));
 
     return {
-      badge: waitResult.ok ? "Captured" : "Paused",
+      badge: didWaitSucceed(waitResult) ? "Captured" : "Paused",
       summary: buildPhase4Summary(scenario, phase4Markers, waitResult),
       screenshots: [screenshot],
       artifacts: artifacts,
@@ -379,7 +419,7 @@
     const xexUrl = withCacheBust(xexPath);
     await api.debug.setBreakpoints([targetPc]);
     logLine("Booting " + xexPath + " to entry breakpoint $" + hex(targetPc, 4));
-    await api.dev.runXexFromUrl(
+    const launchResult = await api.dev.runXexFromUrl(
       xexUrl,
       Object.assign(
         {
@@ -388,9 +428,18 @@
         runXexOptions || {},
       ),
     );
+    if (
+      launchResult &&
+      launchResult.ok === true &&
+      launchResult.phase === "entry_breakpoint_hit" &&
+      launchResult.debugState
+    ) {
+      logLine("Breakpoint hit: " + formatState(launchResult.debugState));
+      return launchResult;
+    }
     const stop = await api.debug.waitForBreakpoint({
       timeoutMs: DEFAULT_TIMEOUT_MS,
-      immediate: false,
+      immediate: true,
       screenshot: true,
       traceTailLimit: 32,
       beforeInstructions: 8,
@@ -408,7 +457,11 @@
   }
 
   async function settleForArtifacts(api, waitResult) {
-    if (waitResult && waitResult.ok === false && waitResult.debugState) {
+    if (
+      waitResult &&
+      waitResult.debugState &&
+      (waitResult.ok === false || waitResult.debugState.running === false)
+    ) {
       logLine("Execution stopped early: " + formatState(waitResult.debugState));
       return waitResult.debugState;
     }
@@ -601,9 +654,9 @@
     const entryPc = typeof scenario.entryPc === "number" ? scenario.entryPc & 0xffff : DEFAULT_ENTRY_PC;
     const lines = [
       "Booted " + scenario.xexPath + " to $" + hex(entryPc, 4) + " and swapped D1 to " + scenario.diskPath + ".",
-      waitResult && waitResult.ok === false
-        ? "Execution paused early with reason '" + (waitResult.reason || "pause") + "'."
-        : "Execution was allowed to run for 1500 ms before artifact capture.",
+      didWaitSucceed(waitResult)
+        ? "Execution was allowed to run for 1500 ms before artifact capture."
+        : "Execution paused early: " + describeWaitResult(waitResult) + "."
     ];
 
     if (markers) {
@@ -655,6 +708,36 @@
       screenshots: screenshot ? [screenshot] : [],
       artifacts: failure,
       phase4Markers: decodePhase4Markers(failure),
+    };
+  }
+
+  async function buildPhase3WaitFailureResult(api, scenario, stage, waitResult, screenshots, note) {
+    const failure = await api.artifacts.captureFailureState({
+      operation: scenario.id,
+      failure: {
+        phase: "phase3_" + stage.replace(/\s+/g, "_"),
+        reason: waitResult && waitResult.reason ? String(waitResult.reason) : "timeout",
+        message: note,
+      },
+    });
+    const failureShot = screenshotFromArtifactBundle(failure, scenario.id + "-failure");
+    const outputScreenshots = Array.isArray(screenshots) ? screenshots.slice() : [];
+    if (failureShot) {
+      outputScreenshots.push(failureShot);
+    }
+    logLine("Phase 3 wait failed during " + stage + ": " + describeWaitResult(waitResult));
+    return {
+      badge:
+        waitResult && waitResult.reason === "timeout"
+          ? "Timeout"
+          : "Paused",
+      summary: [
+        "Booted " + scenario.xexPath + " but " + note,
+        describeWaitResult(waitResult),
+        "Captured " + outputScreenshots.length + " screenshot(s) before the failure.",
+      ],
+      screenshots: outputScreenshots,
+      artifacts: failure,
     };
   }
 
@@ -762,6 +845,30 @@
       parts.push("PC=$" + hex(failure.debugState.pc, 4));
     }
     return parts.join(", ") || "Automation failed.";
+  }
+
+  function describeWaitResult(waitResult) {
+    if (!waitResult) return "Wait failed.";
+    const parts = [];
+    if (waitResult.reason) parts.push("reason=" + waitResult.reason);
+    if (typeof waitResult.elapsedMs === "number") {
+      parts.push("elapsedMs=" + waitResult.elapsedMs);
+    }
+    if (waitResult.debugState && waitResult.debugState.running === false) {
+      parts.push("running=false");
+    }
+    if (waitResult.debugState && typeof waitResult.debugState.pc === "number") {
+      parts.push("PC=$" + hex(waitResult.debugState.pc, 4));
+    }
+    return parts.join(", ") || "Wait failed.";
+  }
+
+  function didWaitSucceed(waitResult) {
+    return !!(
+      waitResult &&
+      waitResult.ok === true &&
+      (!waitResult.debugState || waitResult.debugState.running !== false)
+    );
   }
 
   function screenshotFromArtifactBundle(bundle, label) {
