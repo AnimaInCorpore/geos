@@ -13,6 +13,9 @@
 .import atari_dlist
 .import AtariColorTable
 .import _ResetHandle
+.if .defined(mse_stmouse)
+.import AtariMouseSample
+.endif
 
 ; vars.s
 .import KbdQueFlag
@@ -39,7 +42,7 @@ ATARI_DMACTL_ACTIVE = $3E
 InitAtariIRQ:
 	lda #0
 	sta nmiDisableDepth
-	lda #$40
+	lda #$c0
 	sta nmiEnableMask
 
 	lda #<_NMIHandler
@@ -51,7 +54,7 @@ InitAtariIRQ:
 	lda #>_IRQVectorHandler
 	sta $FFFF
 
-	lda #$40
+	lda #$c0
 	sta NMIEN
 	rts
 
@@ -97,10 +100,9 @@ _NMIHandler:
 
 @is_vbi:
 	sta NMIRES          ; acknowledge VBI only
-	; Keep NMI source mask pinned to VBI-only.  Some legacy C64 app paths can
-	; accidentally write ANTIC NMIEN while running on Atari and re-enable DLI,
-	; which causes rapid sequential DLI firings that starve the main loop.
-	lda #$40
+	; Keep the intended VBI + DLI mask pinned so Atari DLI mouse sampling stays
+	; live even if legacy code touches NMIEN mid-frame.
+	lda nmiEnableMask
 	sta NMIEN
 	txa
 	pha
@@ -118,12 +120,20 @@ _NMIHandler:
 
 @is_dli:
 	sta NMIRES          ; acknowledge DLI; without this the NMI re-fires immediately
-	; Recover from accidental DLI enablement by restoring the intended mask.
-	lda #$40
+	lda nmiEnableMask
 	sta NMIEN
-	; Re-assert display and CPU vectors even on DLI entry so legacy code that
-	; scribbles ANTIC/page-2 state cannot starve the system before next VBI.
+	txa
+	pha
+	tya
+	pha
 	jsr MaintainAtariDisplay
+.if .defined(mse_stmouse)
+	jsr AtariMouseSample
+.endif
+	pla
+	tay
+	pla
+	tax
 	pla
 	rti
 

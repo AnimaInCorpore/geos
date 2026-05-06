@@ -204,8 +204,8 @@ _ResetHandle:
 	.word dirEntryBuf
 	.byte 0
 	; i_FillRam zeros $8400-$88FF which includes nmiEnableMask ($88AB).
-	; Restore it so _MainLoop's NMIEN restore keeps VBI active.
-	lda #$40
+	; Restore it so _MainLoop's NMIEN restore keeps VBI/DLI active.
+	lda #$c0
 	sta nmiEnableMask
 .ifdef atarixl
 	; Atari is always 40-column. graphMode is shared with the 128 code paths,

@@ -34,9 +34,10 @@
 _MainLoop:
 .ifdef atarixl
 	; DESK TOP's C64 SID init writes 0 to $D40E (= NMIEN on Atari) to silence
-	; audio. Restore VBI enable here so the NMI handler can keep reasserting the
-	; Atari display state and the desktop keeps drawing with interrupts live.
-	lda #$40
+	; audio. Restore VBI/DLI enable here so the NMI handler can keep
+	; reasserting the Atari display state and the desktop keeps drawing with
+	; interrupts live.
+	lda #$c0
 	sta nmiEnableMask
 	sta NMIEN
 .endif

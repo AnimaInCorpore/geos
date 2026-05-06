@@ -104,14 +104,48 @@ AtariColorTable:
 
 atari_dlist:
 	.byte $70, $70, $70
-	.byte $4f
+	; DLI bits are sprinkled through the bitmap so the Atari mouse driver can
+	; sample quadrature at a much higher rate than the VBI.
+	.byte $cf
 	.word BITMAP_LMS0
-	.repeat 101
+	.repeat 24
 		.byte $0f
 	.endrepeat
-	.byte $4f
+	.byte $8f
+	.repeat 24
+		.byte $0f
+	.endrepeat
+	.byte $8f
+	.repeat 24
+		.byte $0f
+	.endrepeat
+	.byte $8f
+	.repeat 24
+		.byte $0f
+	.endrepeat
+	.byte $8f
+	.repeat 24
+		.byte $0f
+	.endrepeat
+	.byte $cf
 	.word BITMAP_LMS1
-	.repeat 97
+	.repeat 19
+		.byte $0f
+	.endrepeat
+	.byte $8f
+	.repeat 19
+		.byte $0f
+	.endrepeat
+	.byte $8f
+	.repeat 19
+		.byte $0f
+	.endrepeat
+	.byte $8f
+	.repeat 19
+		.byte $0f
+	.endrepeat
+	.byte $8f
+	.repeat 18
 		.byte $0f
 	.endrepeat
 	.byte $41

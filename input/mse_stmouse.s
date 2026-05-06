@@ -16,6 +16,7 @@ SlowMouse:
 	jmp _SlowMouse
 UpdateMouse:
 	jmp _UpdateMouse
+.global AtariMouseSample
 .ifdef bsw128
 SetMouse:
 	rts
@@ -69,21 +70,10 @@ _MouseInit:
 _SlowMouse:
 	rts
 
-_UpdateMouse:
-	bbrf MOUSEON_BIT, mouseOn, _SlowMouse
-	lda mouseAccel
-	lsr
-	lsr
-	lsr
-	lsr
-	sta acceleration
-	beq @accelMin
-	jmp @haveAccel
-@accelMin:
-	lda #1
-	sta acceleration
-@haveAccel:
-
+AtariMouseSample:
+	bbsf MOUSEON_BIT, mouseOn, @active
+	rts
+@active:
 	; Fire button (TRIG1: active-low).
 	jsr ReadTriggerBit4
 	cmp fireLast
@@ -179,6 +169,22 @@ _UpdateMouse:
 	LoadW mouseXPos, 319
 @storeX:
 	stx lastX
+@done:
+	rts
+
+_UpdateMouse:
+	bbsf MOUSEON_BIT, mouseOn, @active
+	rts
+@active:
+	lda mouseAccel
+	lsr
+	lsr
+	lsr
+	lsr
+	bne @haveAccel
+	lda #1
+@haveAccel:
+	sta acceleration
 @done:
 	rts
 
