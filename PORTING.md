@@ -1617,10 +1617,10 @@ review to keep explicitly on the porting backlog:
   for display-critical registers (`SDMCTL`, `SDLSTL/H`, `COLOR0-4`, `CHBAS`) instead of
   assuming direct writes to `DMACTL`, `DLISTL/H`, color registers, or `CHBASE` will
   persist across VBI.
-- **Disk-image tool scope.** `tools/atari_geos_disk.py` currently supports sequential
-  `.cvt` inputs only. The minimal Atari-native desktop is sequential, so it can be
-  packaged today; full stock deskTop/application workflows still require VLIR `.cvt`
-  support.
+- **Disk-image tool scope.** `tools/atari_geos_disk.py` now supports sequential
+  `.cvt` inputs and basic VLIR record packing. Full stock deskTop/application
+  workflows still need end-to-end validation on Atari media before treating them
+  as release-ready.
 - **Desktop application gap.** Phase 5 can now prove ROM-off bootstrap,
   desktop-file lookup, and a visible minimal Atari-native desktop. The remaining
   application work is to grow that shell into a practical file manager, or port one
@@ -1628,8 +1628,8 @@ review to keep explicitly on the porting backlog:
   memory, device, and drawing assumptions. Treat stock C64 `DESK TOP` binary launch
   artifacts and any smoke-frame fallback as diagnostics, not end-state evidence for
   a complete Atari desktop.
-- **Drive-unit handling.** `drv1050.s` still hardcodes `DUNIT = 1`; multi-drive support
-  must be revisited so the Atari DCB unit field follows `curDrive`.
+- **Drive-unit handling.** `drv1050.s` now derives Atari `DUNIT` from `curDrive`.
+  Multi-drive workflows still need regression coverage beyond the D1-first bring-up path.
 - **Driver cleanup.** Remove or justify leftover C64-era temporary symbols in
   `drv1050.s` (`tmpclkreg`, `tmpPS`, `tmpgrirqen`, `tmpCPU_DATA`, `tmpmobenble`,
   `tmpDD00`, `tmpDD00_2`) once Phase 4 is stable.

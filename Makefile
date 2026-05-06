@@ -14,6 +14,10 @@ DESKTOP_CVT  = desktop.cvt
 ATARI_DISK_TOOL = tools/atari_geos_disk.py
 ATARIXL_DISK_NAME ?= GEOSXL
 ATARIXL_CVT_FILES ?=
+ATARIXL_BUILD_DIR = build/atarixl
+PHASE5_STOCK_ATR = $(ATARIXL_BUILD_DIR)/phase5_stock_desktop.atr
+PHASE5_SMOKE_ATR = $(ATARIXL_BUILD_DIR)/phase5_smoke_desktop.atr
+PHASE5_NATIVE_ATR = $(ATARIXL_BUILD_DIR)/phase5_native_desktop.atr
 
 ifeq ($(VARIANT),atarixl)
 DISK_RESULT = $(ATR_RESULT)
@@ -350,7 +354,7 @@ atarixl-desktop-bootstrap:
 			PHASE5_CVT="build/atarixl/geos64_cvt/configure.cvt build/atarixl/geos64_cvt/desk_top.cvt build/atarixl/geos64_cvt/joystick.cvt build/atarixl/geos64_cvt/mps_803.cvt"; \
 		fi; \
 	fi; \
-	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/geos.atr
+	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex $(PHASE5_STOCK_ATR)
 
 atarixl-desktop-smoke-bootstrap:
 	@mkdir -p build/atarixl
@@ -368,28 +372,28 @@ atarixl-desktop-smoke-bootstrap:
 			PHASE5_CVT="build/atarixl/geos64_cvt/configure.cvt build/atarixl/geos64_cvt/desk_top.cvt build/atarixl/geos64_cvt/joystick.cvt build/atarixl/geos64_cvt/mps_803.cvt"; \
 		fi; \
 	fi; \
-	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1 -D atarixl_desktop_smoke_frame=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/geos.atr
+	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1 -D atarixl_desktop_smoke_frame=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex $(PHASE5_SMOKE_ATR)
 
 atarixl-native-desktop-bootstrap:
 	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' build/atarixl/desktop_atari.cvt
 	@PHASE5_CVT="build/atarixl/desktop_atari.cvt"; \
-	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex build/atarixl/geos.atr
+	$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' ATARIXL_CVT_FILES="$$PHASE5_CVT" build/atarixl/phase5_desktop_bootstrap.xex $(PHASE5_NATIVE_ATR)
 
 atarixl-native-desktop-run:
 	@$(MAKE) atarixl-native-desktop-bootstrap
-	node tools/phase5_desktop_run.js --native-desktop
+	node tools/phase5_desktop_run.js --native-desktop --disk $(PHASE5_NATIVE_ATR)
 
 atarixl-native-desktop-dialog-run:
 	@$(MAKE) atarixl-native-desktop-bootstrap
-	node tools/phase5_desktop_dialog_run.js --native-desktop
+	node tools/phase5_desktop_dialog_run.js --native-desktop --disk $(PHASE5_NATIVE_ATR)
 
 atarixl-desktop-run:
 	@$(MAKE) atarixl-desktop-bootstrap
-	node tools/phase5_desktop_run.js
+	node tools/phase5_desktop_run.js --disk $(PHASE5_STOCK_ATR)
 
 atarixl-desktop-smoke-run:
 	@$(MAKE) atarixl-desktop-smoke-bootstrap
-	node tools/phase5_desktop_run.js --allow-smoke-frame
+	node tools/phase5_desktop_run.js --allow-smoke-frame --disk $(PHASE5_SMOKE_ATR)
 
 atarixl-disk-smoketest-matrix:
 	@$(MAKE) atarixl-disk-smoketest
@@ -428,6 +432,10 @@ $(BUILD_DIR)/$(D64_RESULT): $(BUILD_DIR)/kernal_compressed.prg
 else
 ifeq ($(VARIANT),atarixl)
 $(BUILD_DIR)/$(ATR_RESULT): $(BUILD_DIR)/kernal_combined.prg $(ATARI_DISK_TOOL) $(ATARIXL_CVT_FILES)
+	@echo Creating $@
+	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@ $(ATARIXL_CVT_FILES)
+
+$(BUILD_DIR)/%.atr: $(BUILD_DIR)/kernal_combined.prg $(ATARI_DISK_TOOL) $(ATARIXL_CVT_FILES)
 	@echo Creating $@
 	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@ $(ATARIXL_CVT_FILES)
 else
@@ -538,7 +546,7 @@ $(BUILD_DIR)/input/koalapad.bin: $(BUILD_DIR)/input/koalapad.o $(INPUTCFG) $(DEP
 $(BUILD_DIR)/input/pcanalog.bin: $(BUILD_DIR)/input/pcanalog.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/pcanalog.o -o $@
 
-.PHONY: FORCE
+.PHONY: FORCE all atarixl atarixl-smoketest atarixl-input-smoketest atarixl-disk-smoketest atarixl-desktop-bootstrap atarixl-desktop-smoke-bootstrap atarixl-native-desktop-bootstrap atarixl-native-desktop-run atarixl-native-desktop-dialog-run atarixl-desktop-run atarixl-desktop-smoke-run atarixl-disk-smoketest-matrix atarixl-siov-minimal-test atarixl-siov-bridge-diag regress clean love
 FORCE:
 
 $(BUILD_FLAGS_FILE): Makefile FORCE
@@ -716,6 +724,3 @@ $(BUILD_DIR)/kernal/relocator.bin: $(PREFIXED_RELOCATOR_OBJS) kernal/relocator_$
 # a must!
 love:	
 	@echo "Not war, eh?"
-DESKTOP_SRC = apps/desktop_atari.s
-native-disk: build/atarixl/desktop_atari.cvt
-	python3 tools/atari_geos_disk.py --disk-name GEOSXL build/atarixl/geos.atr build/atarixl/desktop_atari.cvt

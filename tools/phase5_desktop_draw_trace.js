@@ -83,7 +83,7 @@ function parsePositiveInt(rawValue, optionName) {
 function parseArgs(argv) {
   const options = {
     xexPath: resolveInputPath("build/atarixl/phase5_desktop_bootstrap.xex"),
-    diskPath: resolveInputPath("build/atarixl/geos.atr"),
+    diskPath: resolveInputPath("build/atarixl/phase5_stock_desktop.atr"),
     osPath: resolveInputPath("third_party/A8E/ATARIXL.ROM"),
     basicPath: resolveInputPath("third_party/A8E/ATARIBAS.ROM"),
     bootTimeoutMs: DEFAULT_BOOT_TIMEOUT_MS,

@@ -10,7 +10,7 @@
 //
 // Flow:
 //   1. Boot phase5_desktop_bootstrap.xex to its $0881 entry breakpoint.
-//   2. Mount build/atarixl/geos.atr as D1:.
+//   2. Mount the requested Atari GEOS ATR as D1:.
 //   3. Wait for DoDlgBox to be entered.
 //   4. Wait for the dialog to reach MainLoop, capture a screenshot.
 //   5. Press Return to dismiss the OK dialog.
@@ -67,7 +67,7 @@ function parsePositiveInt(rawValue, optionName) {
 function parseArgs(argv) {
   const options = {
     xexPath: resolveInputPath("build/atarixl/phase5_desktop_bootstrap.xex"),
-    diskPath: resolveInputPath("build/atarixl/geos.atr"),
+    diskPath: "",
     osPath: resolveInputPath("third_party/A8E/ATARIXL.ROM"),
     basicPath: resolveInputPath("third_party/A8E/ATARIBAS.ROM"),
     nativeDesktop: false,
@@ -77,6 +77,7 @@ function parseArgs(argv) {
     visibleScreenshotPath: DEFAULT_VISIBLE_SCREENSHOT,
     dismissedScreenshotPath: DEFAULT_DISMISSED_SCREENSHOT,
   };
+  let diskPathProvided = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -90,6 +91,7 @@ function parseArgs(argv) {
       i++;
       if (i >= argv.length) throw new Error("--disk requires a path");
       options.diskPath = resolveInputPath(argv[i]);
+      diskPathProvided = true;
       continue;
     }
     if (arg === "--os-rom") {
@@ -162,6 +164,14 @@ function parseArgs(argv) {
       process.exit(0);
     }
     throw new Error("Unknown option: " + arg);
+  }
+
+  if (!diskPathProvided) {
+    options.diskPath = resolveInputPath(
+      options.nativeDesktop
+        ? "build/atarixl/phase5_native_desktop.atr"
+        : "build/atarixl/phase5_stock_desktop.atr",
+    );
   }
 
   return options;

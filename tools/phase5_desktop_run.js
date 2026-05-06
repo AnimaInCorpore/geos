@@ -1,10 +1,10 @@
 "use strict";
 
-// Step 20 diagnostic runner for the Atari XL floppy/XEX desktop bootstrap path.
+// Phase 5 diagnostic runner for the Atari XL floppy/XEX desktop bootstrap path.
 //
 // Loads build/atarixl/phase5_desktop_bootstrap.xex, waits for entry at $0881,
-// mounts build/atarixl/geos.atr as D1:, then polls a bootstrap status marker:
-//   $04D0 PHASE5_STATUS
+// mounts an Atari GEOS ATR as D1:, then polls a bootstrap status marker:
+//   $0600 PHASE5_STATUS
 //
 // Status markers:
 //   $10 startup entered
@@ -20,7 +20,7 @@
 //   $E1 desktop lookup/open path failed (for example missing DESK TOP on disk)
 //
 // Exit codes:
-//   0  Bootstrap reached desktop handoff ($80), or smoke frame when explicitly allowed
+//   0  Bootstrap reached the requested desktop evidence marker
 //   1  Bootstrap reached EnterDeskTop but desktop load/render criteria were not met
 //   2  TIMEOUT waiting for decisive status
 //   3  Fatal (missing files / API errors)
@@ -124,7 +124,7 @@ function parsePositiveInt(rawValue, optionName) {
 function parseArgs(argv) {
   const options = {
     xexPath: resolveInputPath("build/atarixl/phase5_desktop_bootstrap.xex"),
-    diskPath: resolveInputPath("build/atarixl/geos.atr"),
+    diskPath: "",
     osPath: resolveInputPath("third_party/A8E/ATARIXL.ROM"),
     basicPath: resolveInputPath("third_party/A8E/ATARIBAS.ROM"),
     pollChunk: POLL_CHUNK,
@@ -135,6 +135,7 @@ function parseArgs(argv) {
     nativeDesktop: false,
     screenshotPath: "",
   };
+  let diskPathProvided = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -148,6 +149,7 @@ function parseArgs(argv) {
       i++;
       if (i >= argv.length) throw new Error("--disk requires a path");
       options.diskPath = resolveInputPath(argv[i]);
+      diskPathProvided = true;
       continue;
     }
     if (arg === "--os-rom") {
@@ -217,12 +219,21 @@ function parseArgs(argv) {
         "  --boot-timeout-ms <ms>   Entry-breakpoint timeout\n" +
         "  --post-cycles <count>    Extra cycles before pause/artifacts\n" +
         "  --allow-smoke-frame      Treat $81 smoke-frame fallback as success\n" +
-        "  --native-desktop         Accept the Atari-native desktop handoff at $80\n" +
+        "  --native-desktop         Require Atari-native visible marker $82\n" +
         "  --screenshot <path>      Save a PNG screenshot artifact"
       );
       process.exit(0);
     }
     throw new Error("Unknown option: " + arg);
+  }
+
+  if (!diskPathProvided) {
+    const defaultDisk = options.nativeDesktop
+      ? "build/atarixl/phase5_native_desktop.atr"
+      : options.allowSmokeFrame
+        ? "build/atarixl/phase5_smoke_desktop.atr"
+        : "build/atarixl/phase5_stock_desktop.atr";
+    options.diskPath = resolveInputPath(defaultDisk);
   }
 
   return options;
@@ -584,7 +595,7 @@ async function main() {
         decisive = true;
         break;
       }
-      if (options.nativeDesktop && status >= 0x80 && status <= 0x82) {
+      if (options.nativeDesktop && status === 0x82) {
         decisive = true;
         break;
       }
@@ -986,7 +997,8 @@ async function main() {
     if (status === 0x80) {
       console.log("Bootstrap reached desktop handoff status.");
       if (options.nativeDesktop) {
-        console.log("Native Atari desktop handoff accepted; waiting for desktop render.");
+        console.log("Native Atari desktop handoff is not enough; expected visible marker $82.");
+        process.exit(1);
       }
     }
     if (fontWatchHit) {

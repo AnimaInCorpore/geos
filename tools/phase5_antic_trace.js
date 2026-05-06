@@ -15,7 +15,7 @@ const JSA8E_DIR = path.resolve(REPO_ROOT, "third_party/A8E/jsA8E");
 const { createHeadlessAutomation } = require(path.join(JSA8E_DIR, "headless"));
 
 const ENTRY_PC = 0x0881;
-const ADDR_STATUS = 0x04d0;
+const ADDR_STATUS = 0x0600;
 
 // ANTIC register names
 const ANTIC_NAMES = {
@@ -83,10 +83,12 @@ async function main() {
   const filterReg = args.includes("--filter")
     ? args[args.indexOf("--filter") + 1].toUpperCase()
     : "";
+  const diskPath = args.includes("--disk")
+    ? path.resolve(REPO_ROOT, args[args.indexOf("--disk") + 1])
+    : path.resolve(REPO_ROOT, "build/atarixl/phase5_stock_desktop.atr");
 
   const syms = loadSymbols();
   const xexPath = path.resolve(REPO_ROOT, "build/atarixl/phase5_desktop_bootstrap.xex");
-  const diskPath = path.resolve(REPO_ROOT, "build/atarixl/geos.atr");
   const osPath = path.resolve(REPO_ROOT, "third_party/A8E/ATARIXL.ROM");
   const basicPath = path.resolve(REPO_ROOT, "third_party/A8E/ATARIBAS.ROM");
 
