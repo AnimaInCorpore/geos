@@ -1682,6 +1682,10 @@ review to keep explicitly on the porting backlog:
   memory, device, and drawing assumptions. Treat stock C64 `DESK TOP` binary launch
   artifacts and any smoke-frame fallback as diagnostics, not end-state evidence for
   a complete Atari desktop.
+- **C desktop audit.** `third_party/geos-desktop2.1-master` is useful as a high-level
+  desktop behavior reference, but it is not an Atari-ready replacement. See
+  `docs/desktop-c-audit.md` for the `desktop.c` / `desktop-res.grc` audit and the
+  current decision to keep `apps/desktop_atari.s` as the mainline Atari shell.
 - **Drive-unit handling.** `drv1050.s` now derives Atari `DUNIT` from `curDrive`.
   Multi-drive workflows still need regression coverage beyond the D1-first bring-up path.
 - **Driver cleanup.** Remove or justify leftover C64-era temporary symbols in
