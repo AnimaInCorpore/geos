@@ -189,9 +189,9 @@ The jsA8E headless Phase 4 path now reaches end-to-end pass state
 (`PHASE4_RESULTS=$0F`, `PHASE4_ERROR=$00`) on the current smoketest matrix.
 That PAL matrix is the automated evidence for `PORTING.md` step 17.
 
-Use the harness as the browser-side iteration path. Keep Altirra as the
-sign-off-grade emulator for discrepancies, PAL release regression, and steps that
-explicitly name Altirra.
+Use the harness as the browser-side iteration path. Keep PAL hardware as the
+final sign-off path for discrepancies, PAL release regression, and steps that
+explicitly require hardware validation.
 
 For repeatable headless Phase 4 evidence on multiple disk images, run:
 
@@ -216,15 +216,8 @@ jsA8E auto-loads ROMs from `../ATARIXL.ROM` and `../ATARIBAS.ROM` relative to it
 page. With the manual UI URL above, that means
 `third_party/A8E/ATARIXL.ROM` and `third_party/A8E/ATARIBAS.ROM`.
 
-For Altirra setup and local placement in `third_party/`, see:
+For local setup and third-party placement, see:
 `third_party/README.md`.
-
-For the Windows PowerShell 7 Atari Phase 4 disk smoketest, use a dedicated
-`portablealt` INI such as `build/atarixl/phase4_test.ini` and set
-`"Simulator: Error mode" = 2` under
-`[User\Software\virtualdub.org\Altirra\Settings]`. That changes Altirra from a
-modal program-error dialog to a paused failure state, which keeps the Phase 4
-stage/error overlay visible for diagnosis.
 
 ## Drivers
 

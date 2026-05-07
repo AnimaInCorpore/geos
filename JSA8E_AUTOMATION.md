@@ -303,9 +303,9 @@ Flow:
 8. `pause()`
 9. `collectArtifacts({ ranges: [{ label: "phase4_markers", start: 0x04e7, length: 0x0f }], traceTailLimit: 32 })`
 
-For Phase 4, this remains a diagnostic and sign-off-prep flow. Altirra is still
-the sign-off path because the smoke harness swaps `D1:` after the XEX reaches
-`$0881` instead of reproducing the final boot configuration exactly.
+For Phase 4, this remains a diagnostic and sign-off-prep flow. PAL hardware is
+still the final sign-off path because the smoke harness swaps `D1:` after the
+XEX reaches `$0881` instead of reproducing the final boot configuration exactly.
 
 Before and after the ATR swap, capture `getSystemState({ timeoutMs: ... })` so
 the failure bundle records ROM readiness, mounted media, bank state, and any
@@ -352,8 +352,8 @@ Current reproducible marker/data state after resuming from `$0881`:
 
 A minimal direct `jsr SIOV` diagnostic (without the bridge/full GEOS runtime
 context) passes under headless jsA8E, so the remaining gap is isolated to the
-full bridged runtime path. Keep jsA8E as the fast diagnostic loop and Altirra
-as the sign-off path for step closure.
+full bridged runtime path. Keep jsA8E as the fast diagnostic loop and PAL
+hardware as the sign-off path for step closure.
 
 ### Cache-busting reload
 

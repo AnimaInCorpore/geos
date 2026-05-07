@@ -20,7 +20,7 @@
       entryPc: DEFAULT_ENTRY_PC,
       description:
         "Boot the low-RAM Phase 2 display harness, let the static bitmap settle, then capture a screenshot and a small framebuffer dump.",
-      caveat: "Repeatable browser automation path. Step sign-off still stays in Altirra.",
+      caveat: "Repeatable browser automation path. Step sign-off still requires PAL hardware.",
       run: runPhase2Display,
     },
     phase3_input: {

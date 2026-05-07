@@ -1430,7 +1430,7 @@ boundary handling (see §6.8).
 ### Phase 2: Bring up the display (OS-assisted mode)
 6. Write `kernal/start/start_atari.s` (ANTIC display list, GTIA color init)
 7. Write `kernal/hw/hw_atari.s`
-8. Boot in Altirra emulator with **PAL Atari 800 XL** profile and OS ROM active; verify bitmap appears on screen
+8. Boot in the jsA8E browser harness with **PAL Atari 800 XL** profile and OS ROM active; verify bitmap appears on screen
 9. Run graphics routines (`HorizontalLine`, `Rectangle`); confirm correct output
 
 Phase 2 gate before considering step 9 done:
@@ -1449,8 +1449,8 @@ Preferred jsA8E iteration path (repeatable PAL evidence and diagnostics):
 - When boot state matters, use the reset-time bank override support (`system.reset({ portB: $FF })`, `system.boot({ portB: $FF })`, or `dev.runXex({ ..., resetOptions: { portB: $FF } })`) so the harness can rule out XL self-test / ROM-mapping issues before treating a failure as a GEOS regression.
 - For browser retries, prefer `system.reload({ cacheBust: true })` (or explicit `cacheBust` fetch options) before attributing stale behavior to GEOS changes.
 - Treat schema-versioned failure bundles (`artifactSchemaVersion: "2"`) as the default evidence format; they include debug state, bank state, mounted media, console-key state, trace tail, optional disassembly/source context, and optional screenshots.
-- Keep Altirra as the required sign-off path for steps that explicitly call it out by name (8, 9, 27, and 28) and as a Phase 6 release-regression path. Do not mix Altirra or physical-hardware sign-off into a step that is otherwise defined as a jsA8E automation gate.
-- Treat the jsA8E Phase 4 matrix as the canonical automated evidence for step 17. The flow still swaps `D1:` after the XEX loader reaches the rebased `$0881` smoke entry point, so use Altirra for discrepancy debugging and release sign-off, not as an extra hidden condition for checking step 17.
+- Keep jsA8E as the required sign-off-prep path for steps that explicitly call it out by name (8, 9, 27, and 28) and use PAL hardware for any final sign-off. Do not mix PAL hardware sign-off into a step that is otherwise defined as a jsA8E automation gate.
+- Treat the jsA8E Phase 4 matrix as the canonical automated evidence for step 17. The flow still swaps `D1:` after the XEX loader reaches the rebased `$0881` smoke entry point, so use PAL hardware for discrepancy debugging and release sign-off, not as an extra hidden condition for checking step 17.
 
 ### Phase 3: Bring up input (OS-assisted mode)
 10. Write `input/joydrv_atari.s`
@@ -1478,8 +1478,8 @@ Phase 3 gate before considering step 13 done:
 
 Phase 4 gate before considering step 17 done:
 - Make `EnterTurbo`/`ExitTurbo`/`PurgeTurbo` Atari-safe first. Baseline Atari 1050 bring-up can treat them as compatibility no-ops (or a tiny state-only shim) until a real acceleration path exists.
-- Use `createHeadlessAutomation(...)` from `jsA8E/headless.js` as the primary iteration path for faster, deterministic smoke runs (no browser or HTTP server needed). Fall back to the browser harness or Altirra-with-INI path only for visual inspection or when a problem does not reproduce headless.
-- Use Altirra with `build/atarixl/phase4_test.ini` and `"Simulator: Error mode" = 2` for sign-off-grade debugging and Phase 6 release regression, but not as a second hidden checkbox condition for step 17.
+- Use `createHeadlessAutomation(...)` from `jsA8E/headless.js` as the primary iteration path for faster, deterministic smoke runs (no browser or HTTP server needed). Fall back to the browser harness only for visual inspection or when a problem does not reproduce headless.
+- Use PAL hardware for sign-off-grade debugging and Phase 6 release regression, but not as a second hidden checkbox condition for step 17.
 - Always start the smoke XEX through the preflight/boot path (`dev.runXex(...)` / `dev.runXexFromUrl(...)`) and preserve the emitted progress checkpoints plus the structured boot-failure artifact. Enable boot guards (`maxBootInstructions`, `maxBootCycles`, `detectTightLoop`) in scripted runs so boot-loop failures are explicit and reproducible. For the current Phase 4 smoke XEX, the working entry flow is `awaitEntry: false` plus a normal breakpoint wait at `$0881`; treat `xex_boot_failed`, ROM/protected-memory overlap, boot-buffer placement, self-test-visible bank-state reports, and any explicit lifecycle-request timeout as automation diagnostics that must be cleared before evaluating GEOS disk code.
 - Use `media.mountDisk(...)` / `media.mountDiskFromUrl(...)` for the writable ATR swap, and record `getSystemState({ timeoutMs: ... })` before and after the mount so the artifact bundle captures the exact ROM/media/bank state for the failed run even when one read degrades into partial state.
 - After resuming from `$0881`, prefer marker-driven waits (`debug.waitForMemory(...)`) and `debug.runUntilPcOrSnapshot(...)` instead of a single fixed-duration wait; this makes partial progress and failure phase boundaries reproducible in artifacts.
@@ -1513,8 +1513,8 @@ Phase 5 prerequisites and disk rule:
 26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80×)
 
 ### Phase 7: Optional cartridge packaging
-27. Create 8 KB cartridge ROM image for $A000–$BFFF; test cold-boot in Altirra **PAL XL** profile
-28. Verify GEOS desktop loads end-to-end from cartridge + floppy; then repeat final sign-off in Altirra PAL XL and on PAL hardware
+27. Create 8 KB cartridge ROM image for $A000–$BFFF; test cold-boot in the jsA8E **PAL XL** profile
+28. Verify GEOS desktop loads end-to-end from cartridge + floppy; then repeat final sign-off on PAL hardware
 
 Step 22 P/M init requirement:
 - Zero GRAFM_W ($D011) alongside GRAFPx during P/M setup. This register controls
@@ -1530,7 +1530,7 @@ Step 26 timing requirement:
 - Version 1 constants may be calibrated for PAL 50 Hz nominal timing, but any timing path advertised as PAL/NTSC-compatible must load `vbiHz` at runtime rather than assume 50. Long-running PAL wall-clock code should either tolerate the actual ~49.86074 Hz frame rate or use a fractional accumulator.
 
 Phase 6 regression note:
-- Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary regression capture path (screenshots, traces, failure bundles, and scripted input) across Phases 2-4 smoke binaries and selected cartridge/ROM-off bring-up binaries. Fall back to the browser path only for live visual inspection. Then repeat milestone sign-off in Altirra and on PAL hardware where required.
+- Use jsA8E headless Node.js (`createHeadlessAutomation(...)`) as the primary regression capture path (screenshots, traces, failure bundles, and scripted input) across Phases 2-4 smoke binaries and selected cartridge/ROM-off bring-up binaries. Fall back to the browser path only for live visual inspection. Then repeat milestone sign-off on PAL hardware where required.
 
 ---
 
@@ -1619,8 +1619,8 @@ under `atarixl` to avoid corrupting application data.
 
 **PORTB bit polarity.** On XL/XE machines, BASIC ROM disable is bit 1 = 1 (RAM),
 and OS ROM disable is bit 0 = 0 (RAM). The polarities differ from what intuition
-might suggest; refer to the mask table in §2 and test on real hardware or Altirra
-with accurate XL hardware emulation enabled.
+might suggest; refer to the mask table in §2 and test on real hardware or in
+jsA8E with accurate XL hardware emulation enabled.
 
 **KBCODE modifier polarity.** POKEY KBCODE bits 6 and 7 are **active-low**: bit 6 = 0
 means Shift is pressed, bit 7 = 0 means Control is pressed — the opposite of what the
@@ -1699,8 +1699,8 @@ review to keep explicitly on the porting backlog:
 The 2026-05-04 process review narrowed version 1 to a PAL Atari 800 XL and removed
 hidden PAL/NTSC and emulator/hardware gate mixing from the checklist:
 
-- **PAL first-version scope.** PAL jsA8E and PAL Altirra/hardware sign-off are the
-  only first-version targets. NTSC remains a later compatibility pass; do not use
+- **PAL first-version scope.** PAL jsA8E and PAL hardware sign-off are the only
+  first-version targets. NTSC remains a later compatibility pass; do not use
   unvalidated NTSC behavior as evidence for a completed PAL step.
 - **I/O-hole linker rule.** Every Atari linker config must split around `$D000-$D7FF`.
   The C64-style contiguous `$C100-$FFFF` KERNAL region is invalid on Atari because it
@@ -1730,7 +1730,7 @@ delta is:
 
 1. **Display-list border centering.** The 24-line top border produces a larger bottom
    border on PAL than on NTSC (PAL has more total ANTIC active lines). Re-test on NTSC
-   hardware or in Altirra with an NTSC profile; adjust blank-line count in the display
+   hardware or in jsA8E with an NTSC profile; adjust blank-line count in the display
    list if vertical centering is visually unacceptable. The bitmap height stays at 200.
 2. **GTIA palette tuning.** GTIA color register values produce different hues on PAL vs
    NTSC due to the different color subcarrier. Re-check all UI colors (foreground,
