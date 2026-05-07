@@ -19,6 +19,9 @@ PHASE5_STOCK_ATR = $(ATARIXL_BUILD_DIR)/phase5_stock_desktop.atr
 PHASE5_SMOKE_ATR = $(ATARIXL_BUILD_DIR)/phase5_smoke_desktop.atr
 PHASE5_NATIVE_ATR = $(ATARIXL_BUILD_DIR)/phase5_native_desktop.atr
 PHASE5_NATIVE_MENU_ATR = $(ATARIXL_BUILD_DIR)/phase5_native_menu.atr
+PHASE7_CART_BOOT_CVT = $(ATARIXL_BUILD_DIR)/phase7_cart_bootstrap.cvt
+PHASE7_CART_BOOT_ROM = $(ATARIXL_BUILD_DIR)/phase7_cart_bootstrap.rom
+PHASE7_CART_BOOT_ATR = $(ATARIXL_BUILD_DIR)/phase7_cart_bootstrap.atr
 
 ifeq ($(VARIANT),atarixl)
 DISK_RESULT = $(ATR_RESULT)
@@ -405,6 +408,10 @@ atarixl-desktop-smoke-run:
 	@$(MAKE) atarixl-desktop-smoke-bootstrap
 	node tools/phase5_desktop_run.js --allow-smoke-frame --disk $(PHASE5_SMOKE_ATR)
 
+atarixl-cart-bootstrap:
+	@$(MAKE) VARIANT=atarixl DRIVE=drv1050 INPUT=joydrv_atari EXTRA_ASFLAGS='-D atarixl_desktop_smoketest=1' \
+		$(PHASE7_CART_BOOT_ROM) $(PHASE7_CART_BOOT_CVT) $(PHASE7_CART_BOOT_ATR)
+
 atarixl-disk-smoketest-matrix:
 	@$(MAKE) atarixl-disk-smoketest
 	node tools/phase4_disk_matrix_run.js
@@ -556,7 +563,7 @@ $(BUILD_DIR)/input/koalapad.bin: $(BUILD_DIR)/input/koalapad.o $(INPUTCFG) $(DEP
 $(BUILD_DIR)/input/pcanalog.bin: $(BUILD_DIR)/input/pcanalog.o $(INPUTCFG) $(DEPS)
 	$(LD) -C $(INPUTCFG) $(BUILD_DIR)/input/pcanalog.o -o $@
 
-.PHONY: FORCE all atarixl atarixl-smoketest atarixl-input-smoketest atarixl-disk-smoketest atarixl-desktop-bootstrap atarixl-desktop-smoke-bootstrap atarixl-native-desktop-bootstrap atarixl-native-desktop-run atarixl-native-desktop-dialog-run atarixl-native-desktop-menu-bootstrap atarixl-native-desktop-menu-run atarixl-desktop-run atarixl-desktop-smoke-run atarixl-disk-smoketest-matrix atarixl-siov-minimal-test atarixl-siov-bridge-diag regress clean love
+.PHONY: FORCE all atarixl atarixl-smoketest atarixl-input-smoketest atarixl-disk-smoketest atarixl-desktop-bootstrap atarixl-desktop-smoke-bootstrap atarixl-native-desktop-bootstrap atarixl-native-desktop-run atarixl-native-desktop-dialog-run atarixl-native-desktop-menu-bootstrap atarixl-native-desktop-menu-run atarixl-desktop-run atarixl-desktop-smoke-run atarixl-cart-bootstrap atarixl-disk-smoketest-matrix atarixl-siov-minimal-test atarixl-siov-bridge-diag regress clean love
 FORCE:
 
 $(BUILD_FLAGS_FILE): Makefile FORCE
@@ -721,6 +728,24 @@ $(BUILD_DIR)/desktop_atari.cvt: $(BUILD_DIR)/desktop_atari.bin tools/make_geos_c
 	    --geos-type 6 \
 	    --str-type 0 \
 	    $< $@
+
+$(PHASE7_CART_BOOT_CVT): $(BUILD_DIR)/phase5_desktop_bootstrap.xex tools/make_geos_cvt.py
+	@mkdir -p $(dir $@)
+	python3 tools/make_geos_cvt.py \
+	    --dos-name "CARTBOOT" \
+	    --class-name "CartBoot" \
+	    --load-addr 0x0880 \
+	    --start-vec 0x0881 \
+	    $< $@
+
+$(PHASE7_CART_BOOT_ROM): tools/phase7_cart_bootstrap.s tools/phase7_cart_bootstrap.cfg $(BUILD_FLAGS_FILE)
+	@mkdir -p $(dir $@)
+	$(AS) $(ASFLAGS) tools/phase7_cart_bootstrap.s -o $(BUILD_DIR)/phase7_cart_bootstrap.o
+	$(LD) -C tools/phase7_cart_bootstrap.cfg $(BUILD_DIR)/phase7_cart_bootstrap.o -o $@
+
+$(PHASE7_CART_BOOT_ATR): $(PHASE7_CART_BOOT_CVT) $(BUILD_DIR)/desktop_atari.cvt $(ATARI_DISK_TOOL)
+	@echo Creating $@
+	python3 $(ATARI_DISK_TOOL) --disk-name $(ATARIXL_DISK_NAME) $@ $(PHASE7_CART_BOOT_CVT) $(BUILD_DIR)/desktop_atari.cvt
 endif
 
 $(BUILD_DIR)/kernal/kernal2.bin: $(PREFIXED_KERNAL2_OBJS) kernal/kernal2_$(VARIANT).cfg

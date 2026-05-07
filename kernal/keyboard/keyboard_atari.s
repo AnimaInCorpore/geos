@@ -53,7 +53,7 @@ _DoKeyboardScan:
 	bne @done                    ; held key, repeat timer not elapsed yet
 	lda r0H
 	jsr KbdScanHelp2
-	jsr SetRepeatDelay
+	jsr SetRepeatRate
 	rts
 
 @queueNew:
@@ -70,9 +70,30 @@ _DoKeyboardScan:
 	rts
 
 SetRepeatDelay:
-	lda KEYREP                   ; OS-assisted repeat source
+	; KbdQueFlag is decremented once per VBI in irq_atari.s.
+	lda KRPDEL                   ; OS-assisted repeat delay source
 	bne @store
-	lda #8
+	lda PAL_R
+	and #$08
+	bne @ntscDelay
+	lda #40
+	bne @store
+@ntscDelay:
+	lda #48
+@store:
+	sta KbdQueFlag
+	rts
+
+SetRepeatRate:
+	lda KEYREP                   ; OS-assisted repeat rate source
+	bne @store
+	lda PAL_R
+	and #$08
+	bne @ntscRate
+	lda #5
+	bne @store
+@ntscRate:
+	lda #6
 @store:
 	sta KbdQueFlag
 	rts

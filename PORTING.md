@@ -385,7 +385,8 @@ VVBLKI  = $0222   ; Immediate VBI vector (2-byte pointer, OS-managed)
 VVBLKD  = $0224   ; Deferred VBI vector (2-byte pointer, OS-managed)
 RTCLOK  = $0012   ; 3-byte real-time clock incremented each VBI ($12/$13/$14)
 CH      = $02FC   ; OS keyboard shadow: $FF = no key pending, else ATASCII code
-KEYREP  = $02DA   ; OS keyboard repeat counter
+KRPDEL  = $02D9   ; OS keyboard repeat delay
+KEYREP  = $02DA   ; OS keyboard repeat rate/counter
 ```
 
 ---
@@ -848,11 +849,12 @@ Build a 64-entry translation table mapping POKEY raw codes (0–$3F) to GEOS int
 key codes (as defined in `inc/const.inc`). Atari key codes differ significantly from
 C64 scan codes.
 
-Key repeat: in OS-assisted mode, use OS repeat delay via `KEYREP` ($02DA). In ROM-off
-mode, implement a repeat counter in `keyboard_atari.s` using the VBI tick counter. If
-later testing shows missed very-short key taps or queue overruns, an interrupt-driven
-POKEY keyboard path can be added as a refinement, but it is not a prerequisite for the
-Phase 3 baseline.
+Key repeat: in OS-assisted mode, use `KRPDEL` ($02D9) for the initial delay and
+`KEYREP` ($02DA) for the repeat rate. In ROM-off mode, seed the same VBI-counted
+repeat counter in `keyboard_atari.s` from the PAL/NTSC defaults (40/48 delay and
+5/6 repeat rate). If later testing shows missed very-short key taps or queue
+overruns, an interrupt-driven POKEY keyboard path can be added as a refinement, but
+it is not a prerequisite for the Phase 3 baseline.
 
 ### 6.5 Adapt: Zero Page
 

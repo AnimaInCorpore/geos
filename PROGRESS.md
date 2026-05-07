@@ -52,7 +52,7 @@ Update rule: after each completed porting step, change exactly one matching chec
 - [x] 23. Connect VBI counter to `kernal/time/` clock routines
 - [x] 24. Implement ST mouse driver (`input/mse_stmouse.s`, adapted from `amigamse.s`)
 - [x] 25. Regression-test all graphics, font, menu, dialog, and file operations under PAL jsA8E
-- [ ] 26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80x)
+- [x] 26. Tune timing loops (PAL Atari ~1.773 MHz vs PAL C64 ~0.985 MHz; cycle-count-dependent delays differ by ~1.80x)
 
 ## Phase 7: Optional cartridge packaging
 
@@ -61,6 +61,7 @@ Update rule: after each completed porting step, change exactly one matching chec
 
 ### Phase 6 Notes
 
+- 2026-05-06: Completed step 26 by correcting the Atari keyboard repeat timing path in `kernal/keyboard/keyboard_atari.s`. The driver now seeds the VBI-counted repeat timer from the OS keyboard delay/rate bytes (`KRPDEL` for the initial delay, `KEYREP` for the repeat rate) and falls back to PAL/NTSC-adjusted defaults (`40/48` delay, `5/6` rate) when the OS values are unavailable. Added the missing `KRPDEL` symbol to `inc/atari.inc` and updated the porting notes to match the actual XL/XE repeat semantics. Validation: `make atarixl`, `make atarixl-input-smoketest`, and `make atarixl-native-desktop-run` all complete successfully; the desktop run still reaches `PHASE5_STATUS=$82` (`NATIVE_DESKTOP_VISIBLE`).
 - 2026-05-06: Fixed critical Atari-specific "gotchas": corrected the active-low logic for POKEY keyboard modifiers (`KBCODE` bits 6 and 7) in `keyboard_atari.s` to use `bbsf` instead of `bbrf`. Replaced C64 tiled coordinate math in `_DrawPoint` and `_TestPoint` with Atari linear framebuffer math (`x >> 3`) inside `.ifdef atarixl` blocks. Adjusted the `BITMAP_BASE` offset to `$4010` in `hw_atari.s` and `start_atari.s` to ensure the 102nd scanline ends perfectly before the 4K boundary at `$5000`.
 - 2026-05-06: Completed step 25. Validation now passes end-to-end under PAL jsA8E with `make atarixl-native-desktop-run`, `make atarixl-native-desktop-dialog-run`, `make atarixl-disk-smoketest-matrix`, and `make atarixl-native-desktop-menu-run`; the menu harness now reaches `PHASE5_STATUS=$83` (`MENU_CALLBACK`).
 - 2026-05-06: PAL Atari 800 XL porting-plan review only; no checkbox changed. `PORTING.md` now calls out real-hardware guardrails for PBCTL/PORTB setup, ANTIC display-list 1 KB placement, Mode `$0F` color polarity, ROM-banked `SIOV` vector/NMI ordering, exact PAL CPU/frame timing, and the need to verify PAL ANTIC timing in addition to `PAL_R`. The review also clarified that a VBI-rate-only ST mouse decode path is not enough for PAL hardware sign-off without DLI-rate sampling or equivalent high-rate polling.

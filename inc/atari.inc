@@ -168,7 +168,8 @@ CDTMV3   = $021C ; 16-bit countdown timer 3
 CDTMV4   = $021E ; 16-bit countdown timer 4
 CDTMV5   = $0220 ; 16-bit countdown timer 5 — SIOV uses this for read/write timeouts
 CH       = $02FC ; OS keyboard shadow: $FF = no key pending, else ATASCII code
-KEYREP   = $02DA ; OS keyboard repeat counter
+KRPDEL   = $02D9 ; OS keyboard repeat delay counter
+KEYREP   = $02DA ; OS keyboard repeat rate counter
 
 ; Low-RAM ROM-banking bridge for OS-assisted SIO calls.
 ; The Phase 5 desktop bootstrap uses $0700-$0842 to avoid runtime overlap with
